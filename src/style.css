@@ -93,6 +93,43 @@ button:active { opacity: 0.7; }
 
 #new-note { font-size: 22px; line-height: 1; padding: 0 12px; }
 
+#auth-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+#auth-bar button { min-height: 32px; padding: 4px 10px; font-size: 13px; }
+#auth-user { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#sync-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+#sync-dot[data-state="synced"] { background: #2da44e; }
+#sync-dot[data-state="syncing"] { background: #d4a72c; }
+#sync-dot[data-state="offline"], #sync-dot[data-state="local"] { background: var(--muted); }
+#sync-dot[data-state="error"] { background: #cf222e; }
+
+#auth-form {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#auth-form[hidden] { display: none; }
+#auth-form input {
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 16px;
+}
+#auth-form > div { display: flex; gap: 8px; }
+#auth-error { color: #cf222e; font-size: 13px; min-height: 0; }
+
 #list-scroll {
   position: relative;
   flex: 1;

@@ -7,8 +7,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'Shita Notes',
-        short_name: 'Shita',
+        name: 'Notes',
+        short_name: 'Notes',
         description: 'Fast, minimal, offline-first Markdown notes.',
         theme_color: '#121212',
         background_color: '#121212',

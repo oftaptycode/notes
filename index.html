@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)" />
-  <title>Shita Notes</title>
+  <title>Notes</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/icon-192.png" />
   <link rel="stylesheet" href="/src/style.css" />
@@ -17,6 +17,22 @@
         <input id="search" type="search" placeholder="Search notes" autocomplete="off" />
         <button id="new-note" aria-label="New note" title="New note">+</button>
       </header>
+      <div id="auth-bar">
+        <span id="sync-dot" title="Sync status"></span>
+        <span id="sync-label"></span>
+        <span id="auth-user"></span>
+        <button id="auth-btn">Sign in</button>
+      </div>
+      <form id="auth-form" hidden>
+        <input id="auth-email" type="email" placeholder="Email" autocomplete="email" required />
+        <input id="auth-password" type="password" placeholder="Password" autocomplete="current-password" required />
+        <div id="auth-error"></div>
+        <div>
+          <button id="auth-signin" type="submit">Sign in</button>
+          <button id="auth-signup" type="button">Sign up</button>
+          <button id="auth-close" type="button">Cancel</button>
+        </div>
+      </form>
       <div id="list-scroll">
         <div id="list-spacer"></div>
         <div id="list-rows"></div>

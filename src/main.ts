@@ -3,8 +3,10 @@ import { createEditor } from './editor';
 import { createList } from './list';
 import { newId, type Note } from './types';
 import { EditorView } from '@codemirror/view';
+import { supabase } from './supabase';
+import { sync, syncSoon, onSyncStatus, onAfterMerge } from './sync';
 
-const LAST_NOTE_KEY = 'shita-last-note';
+const LAST_NOTE_KEY = 'notes-last-note';
 
 const appEl = document.getElementById('app')!;
 const searchInput = document.getElementById('search') as HTMLInputElement;
@@ -50,6 +52,7 @@ async function saveNow() {
   await putNote(note);
   list.refreshRow(note.id);
   saveState.textContent = 'Saved';
+  syncSoon();
 }
 
 async function openNote(id: string) {
@@ -105,6 +108,77 @@ async function deleteCurrent() {
 }
 
 editor.onDocChange(markDirtyAndSchedule);
+
+// --- Auth + sync UI ---
+const authBtn = document.getElementById('auth-btn') as HTMLButtonElement;
+const authForm = document.getElementById('auth-form') as HTMLFormElement;
+const authEmail = document.getElementById('auth-email') as HTMLInputElement;
+const authPassword = document.getElementById('auth-password') as HTMLInputElement;
+const authError = document.getElementById('auth-error')!;
+const authUser = document.getElementById('auth-user')!;
+const syncDot = document.getElementById('sync-dot')!;
+const syncLabel = document.getElementById('sync-label')!;
+
+onSyncStatus((s) => {
+  syncDot.dataset.state = s;
+  syncLabel.textContent = s === 'local' ? 'local only' : s === 'disabled' ? 'no sync' : s;
+});
+onAfterMerge(() => void refreshNotes());
+
+function updateAuthUI(email: string | null) {
+  authUser.textContent = email ?? '';
+  authBtn.textContent = email ? 'Sign out' : 'Sign in';
+  authForm.hidden = true;
+}
+
+if (supabase) {
+  supabase.auth.getSession().then(({ data }) => {
+    updateAuthUI(data.session?.user.email ?? null);
+    if (data.session) void sync();
+  });
+  supabase.auth.onAuthStateChange((_event, session) => {
+    updateAuthUI(session?.user.email ?? null);
+    if (session) void sync();
+  });
+
+  authBtn.addEventListener('click', async () => {
+    const { data } = await supabase!.auth.getSession();
+    if (data.session) {
+      await supabase!.auth.signOut();
+      updateAuthUI(null);
+    } else {
+      authForm.hidden = !authForm.hidden;
+    }
+  });
+
+  authForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    authError.textContent = '';
+    const { error } = await supabase!.auth.signInWithPassword({
+      email: authEmail.value.trim(),
+      password: authPassword.value,
+    });
+    if (error) authError.textContent = error.message;
+  });
+
+  document.getElementById('auth-signup')!.addEventListener('click', async () => {
+    authError.textContent = '';
+    const { error } = await supabase!.auth.signUp({
+      email: authEmail.value.trim(),
+      password: authPassword.value,
+    });
+    if (error) authError.textContent = error.message;
+    else authError.textContent = 'Account created. If email confirmation is enabled, confirm, then sign in.';
+  });
+
+  document.getElementById('auth-close')!.addEventListener('click', () => {
+    authForm.hidden = true;
+  });
+} else {
+  authBtn.style.display = 'none';
+  syncDot.dataset.state = 'disabled';
+  syncLabel.textContent = 'local';
+}
 
 searchInput.addEventListener('input', () => list.setQuery(searchInput.value));
 newBtn.addEventListener('click', () => void createNote());
