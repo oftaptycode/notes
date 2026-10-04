@@ -1,0 +1,27 @@
+{
+  "name": "shita",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.3.3",
+    "@codemirror/lang-markdown": "^6.3.1",
+    "@codemirror/language": "^6.10.3",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.34.1",
+    "@lezer/highlight": "^1.2.1",
+    "@lezer/markdown": "^1.3.2",
+    "@supabase/supabase-js": "^2.45.4",
+    "idb": "^8.0.0",
+    "vite-plugin-pwa": "^0.20.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  }
+}

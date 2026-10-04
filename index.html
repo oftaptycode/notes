@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)" />
+  <title>Shita Notes</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="list-pane">
+      <header id="list-header">
+        <input id="search" type="search" placeholder="Search notes" autocomplete="off" />
+        <button id="new-note" aria-label="New note" title="New note">+</button>
+      </header>
+      <div id="list-scroll">
+        <div id="list-spacer"></div>
+        <div id="list-rows"></div>
+      </div>
+    </aside>
+    <main id="editor-pane">
+      <header id="editor-header">
+        <button id="back" aria-label="Back to notes">&larr; Notes</button>
+        <span id="save-state"></span>
+        <button id="delete-note">Delete</button>
+      </header>
+      <div id="editor"></div>
+    </main>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
