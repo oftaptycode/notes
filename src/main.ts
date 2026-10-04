@@ -13,6 +13,7 @@ const searchInput = document.getElementById('search') as HTMLInputElement;
 const newBtn = document.getElementById('new-note') as HTMLButtonElement;
 const backBtn = document.getElementById('back') as HTMLButtonElement;
 const deleteBtn = document.getElementById('delete-note') as HTMLButtonElement;
+const exportBtn = document.getElementById('export-note') as HTMLButtonElement;
 const saveState = document.getElementById('save-state')!;
 
 let notes: Note[] = [];
@@ -183,6 +184,22 @@ if (supabase) {
 searchInput.addEventListener('input', () => list.setQuery(searchInput.value));
 newBtn.addEventListener('click', () => void createNote());
 deleteBtn.addEventListener('click', () => void deleteCurrent());
+exportBtn.addEventListener('click', async () => {
+  const text = editor.getContent();
+  try {
+    await navigator.clipboard.writeText(text);
+    saveState.textContent = 'Copied to clipboard';
+  } catch {
+    // Fallback for non-secure contexts / older browsers
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    saveState.textContent = 'Copied to clipboard';
+  }
+});
 backBtn.addEventListener('click', () => {
   void saveNow();
   document.body.classList.remove('note-open');
