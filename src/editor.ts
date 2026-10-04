@@ -33,6 +33,11 @@ export function createEditor(parent: HTMLElement): EditorHandle {
           '.cm-scroller': { fontFamily: 'inherit' },
           '.cm-content': { caretColor: 'var(--accent)' },
         }),
+        EditorView.contentAttributes.of({
+          autocapitalize: 'sentences',
+          autocorrect: 'on',
+          spellcheck: 'true',
+        }),
         EditorView.updateListener.of((u) => {
           if (u.docChanged && docChangeHandler && !suppress) docChangeHandler();
         }),
