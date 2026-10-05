@@ -59,13 +59,7 @@ export function createList(
         const preview = document.createElement('div');
         preview.className = 'card-preview';
         preview.textContent = n.content;
-        const meta = document.createElement('div');
-        meta.className = 'card-meta';
-        meta.textContent = new Date(n.updatedAt).toLocaleDateString(undefined, {
-          month: 'long', day: 'numeric', year: 'numeric',
-        });
         card.appendChild(preview);
-        card.appendChild(meta);
         card.addEventListener('click', () => onOpen(n.id));
         rowDiv.appendChild(card);
       }
