@@ -1,4 +1,4 @@
-import { getAllIncludingDeleted, getDirtyNotes, putNote } from './db';
+import { getAllIncludingDeleted, getDirtyNotes, getNote as getNoteForSync, putNote } from './db';
 import { supabase } from './supabase';
 import { newId, type Note } from './types';
 
@@ -63,8 +63,10 @@ export async function sync(): Promise<void> {
   running = true;
   setStatus('syncing');
   try {
-    // 1. Push: upsert every dirty note, then clear its dirty flag.
+    // 1. Push: upsert every dirty note, then clear its dirty flag — but only
+    // if the note wasn't edited again while the push was in flight.
     const dirty = await getDirtyNotes();
+    const pushed = new Map<string, Note>();
     if (dirty.length > 0) {
       const rows = dirty.map((n) => ({
         id: n.id,
@@ -77,7 +79,12 @@ export async function sync(): Promise<void> {
       const { error } = await supabase.from('notes').upsert(rows);
       if (error) throw error;
       for (const n of dirty) {
-        await putNote({ ...n, dirty: false });
+        pushed.set(n.id, n);
+        const current = await getNoteForSync(n.id);
+        if (current && current.updatedAt === n.updatedAt && current.content === n.content) {
+          await putNote({ ...current, dirty: false });
+        }
+        // else: edited during the push — keep dirty, it gets pushed next run.
       }
     }
 
@@ -108,23 +115,45 @@ export async function sync(): Promise<void> {
       }
 
       if (local.dirty) {
-        // Possible conflict: edited locally AND changed remotely since last sync.
         const remote = rowToNote(row);
-        if (remote.updatedAt !== local.updatedAt || remote.deleted !== local.deleted) {
-          const localWins = local.updatedAt >= remote.updatedAt;
-          const keep = localWins ? local : remote;
-          const other = localWins ? remote : local;
-          await putNote({ ...keep, id: local.id, dirty: false });
-          await putNote({
-            id: newId(),
-            content: '(conflict copy)\n\n' + other.content,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            deleted: false,
-            dirty: true,
-          });
-          changed = true;
+
+        // Echo guard: this row is the one we just pushed ourselves in this
+        // same sync run — it is never a conflict, just clear the dirty flag.
+        const echo = pushed.get(row.id);
+        if (echo && row.content === echo.content && row.deleted === echo.deleted) {
+          const current = byId.get(row.id);
+          if (current && current.updatedAt === echo.updatedAt) {
+            await putNote({ ...current, dirty: false });
+          }
+          continue;
         }
+
+        // Same content within 2 s is a timestamp/format rounding artifact,
+        // not a real conflict.
+        const same =
+          remote.content === local.content &&
+          remote.deleted === local.deleted &&
+          Math.abs(remote.updatedAt - local.updatedAt) <= 2000;
+
+        if (same) {
+          await putNote({ ...local, dirty: false });
+          continue;
+        }
+
+        // Possible conflict: edited locally AND changed remotely since last sync.
+        const localWins = local.updatedAt >= remote.updatedAt;
+        const keep = localWins ? local : remote;
+        const other = localWins ? remote : local;
+        await putNote({ ...keep, id: local.id, dirty: false });
+        await putNote({
+          id: newId(),
+          content: '(conflict copy)\n\n' + other.content,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          deleted: false,
+          dirty: true,
+        });
+        changed = true;
         continue;
       }
 

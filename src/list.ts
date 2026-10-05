@@ -25,6 +25,8 @@ export function createList(
   function applyFilter() {
     const q = query.trim().toLowerCase();
     filtered = q === '' ? items : items.filter((n) => n.content.toLowerCase().includes(q));
+    const maxScroll = Math.max(0, filtered.length * ROW - scrollEl.clientHeight);
+    if (scrollEl.scrollTop > maxScroll) scrollEl.scrollTop = maxScroll;
     spacerEl.style.height = filtered.length * ROW + 'px';
     render();
   }
