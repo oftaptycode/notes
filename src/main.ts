@@ -48,6 +48,24 @@ async function saveNow() {
   const note = notes.find((n) => n.id === currentId);
   if (!note) return;
   note.content = editor.getContent();
+
+  // Empty notes are removed instead of saved.
+  if (note.content.trim() === '') {
+    note.deleted = true;
+    note.dirty = true;
+    note.updatedAt = Date.now();
+    await putNote(note);
+    notes = notes.filter((n) => n.id !== note.id);
+    list.setItems(notes);
+    currentId = null;
+    localStorage.removeItem(LAST_NOTE_KEY);
+    editor.setContent('');
+    list.setActive(null);
+    document.body.classList.remove('note-open');
+    saveState.textContent = 'Empty note discarded';
+    return;
+  }
+
   note.updatedAt = Date.now();
   note.dirty = true;
   await putNote(note);
