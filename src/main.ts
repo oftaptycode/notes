@@ -65,6 +65,7 @@ async function openNote(id: string) {
   editor.setContent(note.content);
   list.setActive(id);
   document.body.classList.add('note-open');
+  history.pushState({ note: true }, '');
   saveState.textContent = '';
   editor.view.focus();
 }
@@ -106,6 +107,7 @@ async function deleteCurrent() {
   editor.setContent('');
   list.setActive(null);
   document.body.classList.remove('note-open');
+  if (history.state && (history.state as { note?: boolean }).note) history.back();
 }
 
 editor.onDocChange(markDirtyAndSchedule);
@@ -202,7 +204,17 @@ exportBtn.addEventListener('click', async () => {
 });
 backBtn.addEventListener('click', () => {
   void saveNow();
+  if (history.state && (history.state as { note?: boolean }).note) {
+    history.back(); // popstate removes the class and saves
+  } else {
+    document.body.classList.remove('note-open');
+  }
+});
+
+// Android hardware/back: return to the note list instead of exiting.
+window.addEventListener('popstate', () => {
   document.body.classList.remove('note-open');
+  void saveNow();
 });
 
 document.addEventListener('visibilitychange', () => {
@@ -236,6 +248,7 @@ if (window.visualViewport) {
     // Narrow screens start on the list; keep it that way after restore.
     if (window.matchMedia('(max-width: 799px)').matches) {
       document.body.classList.remove('note-open');
+      history.replaceState(null, '');
     }
   }
 })();
