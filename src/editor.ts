@@ -1,6 +1,7 @@
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 const lineWrapping = EditorView.lineWrapping;
+import { hideMarkersPlugin } from './mdHide';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { syntaxHighlighting } from '@codemirror/language';
 import { markdown } from '@codemirror/lang-markdown';
@@ -27,6 +28,7 @@ export function createEditor(parent: HTMLElement): EditorHandle {
         markdown({ extensions: [GFM] }),
         syntaxHighlighting(mdHighlightStyle),
         markdownLinePlugin,
+        hideMarkersPlugin,
         lineWrapping,
         EditorView.theme({
           '&': { backgroundColor: 'transparent', color: 'var(--fg)', height: '100%' },

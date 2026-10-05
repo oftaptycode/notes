@@ -263,7 +263,7 @@ button:focus-visible, input:focus-visible {
   font-size: 0.9em;
   padding: 0 14px;
 }
-.cm-editor .cm-line.md-hr { color: var(--marker); letter-spacing: 0.1em; }
+.cm-editor .cm-line.md-hr { color: transparent; border-bottom: 1px solid var(--border); height: 0.6em; }
 .cm-editor .cm-line.md-list { text-indent: 0; }
 
 #back { display: none; }
