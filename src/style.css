@@ -187,10 +187,10 @@ button:focus-visible, input:focus-visible {
   white-space: pre-wrap;
   word-break: break-word;
   overflow: hidden;
-  max-height: calc(6 * 13.5px * 1.45);
-  /* fade the last line instead of slicing it mid-glyph */
-  mask-image: linear-gradient(to bottom, black 82%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, black 82%, transparent 100%);
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
 }
 
 
