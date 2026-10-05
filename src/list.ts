@@ -58,7 +58,9 @@ export function createList(
         card.className = 'note-card' + (n.id === activeId ? ' active' : '');
         const preview = document.createElement('div');
         preview.className = 'card-preview';
-        preview.textContent = n.content;
+        const lines = n.content.split('\n');
+        preview.textContent =
+          lines.slice(0, 6).join('\n') + (lines.length > 6 ? ' …' : '');
         card.appendChild(preview);
         card.addEventListener('click', () => onOpen(n.id));
         rowDiv.appendChild(card);
