@@ -168,7 +168,7 @@ button:focus-visible, input:focus-visible {
   flex: 1 1 0;
   min-width: 0;
   height: 100%;
-  padding: 14px 14px 10px;
+  padding: 14px 14px 14px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface, var(--bg));
@@ -179,10 +179,6 @@ button:focus-visible, input:focus-visible {
   gap: 8px;
 }
 .note-card:hover { background: var(--row-hover); }
-.note-card.active {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
 .card-preview {
   flex: 1;
   font-size: 13.5px;
@@ -193,6 +189,7 @@ button:focus-visible, input:focus-visible {
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 6;
+  line-clamp: 6;
   -webkit-box-orient: vertical;
 }
 
@@ -213,14 +210,15 @@ button:focus-visible, input:focus-visible {
 }
 #editor-header button { border-color: transparent; color: var(--muted); }
 #editor-header button:hover { color: var(--fg); border-color: var(--border); }
-#delete-note:hover { color: var(--danger); }
+#delete-note { color: var(--danger); }
+#delete-note:hover { color: var(--danger); border-color: var(--danger); }
 #back { color: var(--accent); }
 
 #save-state { flex: 1; text-align: center; font-size: 12px; color: var(--muted); }
 
 #editor { flex: 1; min-height: 0; }
 
-.cm-editor { height: 100%; font-size: 17px; }
+.cm-editor { height: 100%; font-size: 15px; }
 .cm-editor.cm-focused { outline: none; }
 .cm-scroller {
   font-family: var(--serif);
@@ -237,7 +235,7 @@ button:focus-visible, input:focus-visible {
   caret-color: var(--accent);
   word-break: break-word;
 }
-.cm-line { padding: 0; }
+.cm-line { padding: 0; text-align: justify; text-justify: inter-word; }
 .cm-cursor, .cm-dropCursor { border-left-color: var(--accent); border-left-width: 2px; }
 .cm-selectionBackground, .cm-content ::selection { background: var(--highlight) !important; }
 .cm-focused .cm-selectionBackground { background: var(--highlight) !important; }
@@ -255,6 +253,7 @@ button:focus-visible, input:focus-visible {
   padding: 0 12px;
   color: var(--muted);
   font-style: italic;
+  font-family: var(--serif);
   border-radius: 0 6px 6px 0;
 }
 .cm-editor .cm-line.md-codeblock {
@@ -262,9 +261,41 @@ button:focus-visible, input:focus-visible {
   font-family: var(--mono);
   font-size: 0.9em;
   padding: 0 14px;
+  text-align: left;
 }
 .cm-editor .cm-line.md-hr { color: transparent; border-bottom: 1px solid var(--border); height: 0.6em; }
 .cm-editor .cm-line.md-list { text-indent: 0; }
+
+/* Guillemet inline code-like delimiter: «text» */
+.gq-text {
+  color: #a9bdf2;
+  background: rgba(240, 208, 70, 0.14);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: var(--serif);
+}
+.gq-mark {
+  color: #6f7b80;
+  background: transparent;
+}
+
+/* real links */
+.md-link {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* bracketed text that isn't a real link — no blue, no underline */
+.md-bare-link,
+.md-bare-link span {
+  color: var(--fg);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  font-style: inherit;
+  text-decoration: none;
+  background-color: transparent;
+}
 
 #back { display: none; }
 

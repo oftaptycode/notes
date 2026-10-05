@@ -6,7 +6,8 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { syntaxHighlighting } from '@codemirror/language';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
-import { mdHighlightStyle, markdownLinePlugin } from './mdHighlight';
+import { Guillemets, guillemetPlugin } from './guillemets';
+import { mdHighlightStyle, markdownLinePlugin, linkStylePlugin } from './mdHighlight';
 
 export interface EditorHandle {
   view: EditorView;
@@ -25,10 +26,12 @@ export function createEditor(parent: HTMLElement): EditorHandle {
       extensions: [
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
-        markdown({ extensions: [GFM] }),
+        markdown({ extensions: [GFM, Guillemets] }),
         syntaxHighlighting(mdHighlightStyle),
         markdownLinePlugin,
         hideMarkersPlugin,
+        guillemetPlugin,
+        linkStylePlugin,
         lineWrapping,
         EditorView.theme({
           '&': { backgroundColor: 'transparent', color: 'var(--fg)', height: '100%' },

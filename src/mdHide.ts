@@ -23,6 +23,16 @@ function build(state: EditorState): DecorationSet {
   syntaxTree(state).iterate({
     enter(node: SyntaxNodeRef) {
       if (!HIDDEN.has(node.name)) return;
+
+      // Bracketed text without (url) — like [sic] — is NOT a real link;
+      // leave those brackets visible.
+      if (node.name === 'LinkMark' || node.name === 'URL') {
+        let p: typeof node.node | null = node.node.parent;
+        while (p && p.name !== 'Link') p = p.parent;
+        if (!p) return;
+        if (!p.getChild('URL')) return;
+      }
+
       let to = node.to;
       // Eat one following space for line-leading markers ("# ", "> ", "- ")
       if (node.name === 'HeaderMark' || node.name === 'QuoteMark' || node.name === 'ListMark') {

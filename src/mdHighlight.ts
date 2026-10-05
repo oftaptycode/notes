@@ -16,8 +16,6 @@ export const mdHighlightStyle = HighlightStyle.define([
   { tag: tags.strong, fontWeight: '700' },
   { tag: tags.strikethrough, textDecoration: 'line-through', color: 'var(--muted)' },
   { tag: tags.monospace, fontFamily: 'var(--mono)', fontSize: '0.88em', color: 'var(--code-fg)', backgroundColor: 'var(--code-bg)', borderRadius: '4px', padding: '1px 4px' },
-  { tag: tags.link, color: 'var(--link)', textDecoration: 'underline', textUnderlineOffset: '3px' },
-  { tag: tags.url, color: 'var(--muted)' },
   { tag: tags.quote, color: 'var(--muted)' },
   { tag: tags.contentSeparator, color: 'var(--marker)' },
   // All markers: HeaderMark, QuoteMark, EmphasisMark, CodeMark, ListMark, LinkMark, StrikethroughMark, HardBreak
@@ -81,6 +79,39 @@ export const markdownLinePlugin = ViewPlugin.fromClass(
     update(update: ViewUpdate) {
       if (update.docChanged || update.viewportChanged || update.transactions.length > 0) {
         this.decorations = buildLineDecorations(update.state);
+      }
+    }
+  },
+  { decorations: (v) => v.decorations },
+);
+
+// Style real links only (Link nodes that actually contain a URL child),
+// so bracketed text like [sic] renders as plain text.
+function buildLinkMarks(state: EditorState): DecorationSet {
+  const out: Range<Decoration>[] = [];
+  syntaxTree(state).iterate({
+    enter(node: SyntaxNodeRef) {
+      if (node.name === 'Link') {
+        if (node.node.getChild('URL')) {
+          out.push(Decoration.mark({ class: 'md-link' }).range(node.from, node.to));
+        } else {
+          out.push(Decoration.mark({ class: 'md-bare-link' }).range(node.from, node.to));
+        }
+      }
+    },
+  });
+  return Decoration.set(out, true);
+}
+
+export const linkStylePlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildLinkMarks(view.state);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged || update.transactions.length > 0) {
+        this.decorations = buildLinkMarks(update.state);
       }
     }
   },
