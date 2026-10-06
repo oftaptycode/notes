@@ -1,30 +1,18 @@
-import { getAllIncludingDeleted, getDirtyNotes, getNote as getNoteForSync, putNote } from './db';
+import { getDirtyNotes, getNote, updateNotes } from './db';
 import { supabase } from './supabase';
-import { newId, type Note } from './types';
+import { conflictCopy, type Note } from './types';
 
-const CURSOR_KEY = 'notes-sync-cursor';
-const EPOCH = '1970-01-01T00:00:00.000Z';
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error' | 'disabled' | 'local' | 'pending';
 
-export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error' | 'disabled' | 'local';
-
+const PAGE_SIZE = 200;
 let running = false;
 let statusListener: ((s: SyncStatus) => void) | null = null;
+let beforeSyncListener: (() => Promise<void>) | null = null;
+let afterMergeListener: (() => void | Promise<void>) | null = null;
 
-export function onSyncStatus(cb: (s: SyncStatus) => void) {
-  statusListener = cb;
-}
-
-function setStatus(s: SyncStatus) {
-  statusListener?.(s);
-}
-
-function getCursor(): string {
-  return localStorage.getItem(CURSOR_KEY) ?? EPOCH;
-}
-
-function setCursor(iso: string) {
-  localStorage.setItem(CURSOR_KEY, iso);
-}
+export function onSyncStatus(cb: (s: SyncStatus) => void) { statusListener = cb; }
+export function onBeforeSync(cb: () => Promise<void>) { beforeSyncListener = cb; }
+export function onAfterMerge(cb: () => void | Promise<void>) { afterMergeListener = cb; }
 
 interface RemoteRow {
   id: string;
@@ -36,161 +24,154 @@ interface RemoteRow {
   deleted: boolean;
 }
 
-function rowToNote(r: RemoteRow): Note {
+function sameContent(a: { content: string; deleted: boolean }, b: { content: string; deleted: boolean }) {
+  return a.content === b.content && a.deleted === b.deleted;
+}
+
+function syncedState(row: RemoteRow): NonNullable<Note['synced']> {
+  if (!row.server_updated_at) throw new Error('The server did not return a note revision.');
+  return { content: row.content, deleted: row.deleted, serverUpdatedAt: row.server_updated_at };
+}
+
+function rowToNote(row: RemoteRow): Note {
   return {
-    id: r.id,
-    content: r.content,
-    createdAt: Date.parse(r.created_at),
-    updatedAt: Date.parse(r.updated_at),
-    deleted: r.deleted,
+    id: row.id,
+    content: row.content,
+    createdAt: Date.parse(row.created_at),
+    updatedAt: Date.parse(row.updated_at),
+    deleted: row.deleted,
     dirty: false,
+    synced: syncedState(row),
   };
+}
+
+async function mergeRemote(row: RemoteRow) {
+  await updateNotes(row.id, (local) => {
+    const synced = syncedState(row);
+    if (!local || !local.dirty) return [rowToNote(row)];
+    if (sameContent(local, row)) return [{ ...local, synced, dirty: false }];
+    if (local.synced && sameContent(local.synced, row)) {
+      // Only the local document changed since its acknowledged server state.
+      return [{ ...local, synced }];
+    }
+    // Both versions changed (or an old note has no baseline). Keep the local
+    // edit dirty and back up the remote version before attempting to replace it.
+    return [{ ...local, synced }, conflictCopy(row.content)];
+  });
+}
+
+async function readRemote(id: string, userId: string): Promise<RemoteRow | null> {
+  const { data, error } = await supabase!.from('notes').select('*')
+    .eq('user_id', userId).eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data as RemoteRow | null;
+}
+
+async function pushNote(id: string, userId: string) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const snapshot = await getNote(id);
+    if (!snapshot?.dirty) return;
+    const values = {
+      content: snapshot.content,
+      created_at: new Date(snapshot.createdAt).toISOString(),
+      updated_at: new Date(snapshot.updatedAt).toISOString(),
+      deleted: snapshot.deleted,
+    };
+    const result = snapshot.synced
+      ? await supabase!.from('notes').update(values)
+        .eq('user_id', userId).eq('id', id)
+        .eq('server_updated_at', snapshot.synced.serverUpdatedAt)
+        .select('*').maybeSingle()
+      : await supabase!.from('notes').insert({ ...values, id, user_id: userId })
+        .select('*').single();
+
+    if (result.error && result.error.code !== '23505') throw result.error;
+    if (!result.error && result.data) {
+      const row = result.data as RemoteRow;
+      await updateNotes(id, (current) => current ? [{
+        ...current,
+        synced: syncedState(row),
+        // Compare inside the write transaction. Never overwrite an in-flight edit.
+        dirty: !sameContent(current, row),
+      }] : []);
+      return;
+    }
+
+    // Another device wrote after our read, or inserted the same ID. Fetch and
+    // preserve its version, then retry against that exact server revision.
+    const latest = await readRemote(id, userId);
+    if (!latest) throw new Error('A remote note is unavailable; your local changes have been kept.');
+    await mergeRemote(latest);
+  }
 }
 
 export async function sync(): Promise<void> {
   if (!supabase || running) return;
-  if (!navigator.onLine) {
-    setStatus('offline');
-    return;
-  }
-  const { data: sessionData } = await supabase.auth.getSession();
-  const userId = sessionData.session?.user.id;
-  if (!userId) {
-    setStatus('local');
-    return;
-  }
-
+  // Acquire before the first await, including authentication and local saves.
   running = true;
-  setStatus('syncing');
   try {
-    // 1. Push: upsert every dirty note, then clear its dirty flag — but only
-    // if the note wasn't edited again while the push was in flight.
-    const dirty = await getDirtyNotes();
-    const pushed = new Map<string, Note>();
-    if (dirty.length > 0) {
-      const rows = dirty.map((n) => ({
-        id: n.id,
-        user_id: userId,
-        content: n.content,
-        created_at: new Date(n.createdAt).toISOString(),
-        updated_at: new Date(n.updatedAt).toISOString(),
-        deleted: n.deleted,
-      }));
-      const { error } = await supabase.from('notes').upsert(rows);
-      if (error) throw error;
-      for (const n of dirty) {
-        pushed.set(n.id, n);
-        const current = await getNoteForSync(n.id);
-        if (current && current.updatedAt === n.updatedAt && current.content === n.content) {
-          await putNote({ ...current, dirty: false });
-        }
-        // else: edited during the push — keep dirty, it gets pushed next run.
-      }
+    if (!navigator.onLine) {
+      statusListener?.('offline');
+      return;
     }
-
-    // 2. Pull: rows changed on the server since the cursor.
-    const cursor = getCursor();
-    const { data: remoteRows, error: pullError } = await supabase
-      .from('notes')
-      .select('*')
-      .gt('server_updated_at', cursor)
-      .order('server_updated_at', { ascending: true });
-    if (pullError) throw pullError;
-
-    const all = await getAllIncludingDeleted();
-    const byId = new Map(all.map((n) => [n.id, n]));
-    let maxServerUpdatedAt = cursor;
-    let changed = false;
-
-    for (const row of (remoteRows ?? []) as RemoteRow[]) {
-      if (row.server_updated_at > maxServerUpdatedAt) maxServerUpdatedAt = row.server_updated_at;
-      const local = byId.get(row.id);
-
-      if (!local) {
-        if (!row.deleted) {
-          await putNote(rowToNote(row));
-          changed = true;
-        }
-        continue;
-      }
-
-      if (local.dirty) {
-        const remote = rowToNote(row);
-
-        // Echo guard: this row is the one we just pushed ourselves in this
-        // same sync run — it is never a conflict, just clear the dirty flag.
-        const echo = pushed.get(row.id);
-        if (echo && row.content === echo.content && row.deleted === echo.deleted) {
-          const current = byId.get(row.id);
-          if (current && current.updatedAt === echo.updatedAt) {
-            await putNote({ ...current, dirty: false });
-          }
-          continue;
-        }
-
-        // Same content within 2 s is a timestamp/format rounding artifact,
-        // not a real conflict.
-        const same =
-          remote.content === local.content &&
-          remote.deleted === local.deleted &&
-          Math.abs(remote.updatedAt - local.updatedAt) <= 2000;
-
-        if (same) {
-          await putNote({ ...local, dirty: false });
-          continue;
-        }
-
-        // Possible conflict: edited locally AND changed remotely since last sync.
-        const localWins = local.updatedAt >= remote.updatedAt;
-        const keep = localWins ? local : remote;
-        const other = localWins ? remote : local;
-        await putNote({ ...keep, id: local.id, dirty: false });
-        await putNote({
-          id: newId(),
-          content: '(conflict copy)\n\n' + other.content,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          deleted: false,
-          dirty: true,
-        });
-        changed = true;
-        continue;
-      }
-
-      // Not dirty locally: adopt the server version.
-      await putNote(rowToNote(row));
-      changed = true;
+    await beforeSyncListener?.();
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    const userId = data.session?.user.id;
+    if (!userId) {
+      statusListener?.('local');
+      return;
     }
+    statusListener?.('syncing');
 
-    setCursor(maxServerUpdatedAt);
-    setStatus('synced');
-    if (changed && afterMergeListener) afterMergeListener();
+    // Small, single-user app: reconcile all notes before pushing. ID keyset
+    // pagination avoids response caps, timestamp ties and stale sync cursors.
+    let afterId: string | null = null;
+    while (true) {
+      let query = supabase.from('notes').select('*').eq('user_id', userId)
+        .order('id', { ascending: true }).limit(PAGE_SIZE);
+      if (afterId) query = query.gt('id', afterId);
+      const { data: rows, error: pullError } = await query;
+      if (pullError) throw pullError;
+      const page = (rows ?? []) as RemoteRow[];
+      if (page.length === 0) break;
+      for (const row of page) await mergeRemote(row);
+      const lastId: string = page[page.length - 1].id;
+      if (lastId === afterId) throw new Error('Sync pagination did not advance.');
+      afterId = lastId;
+      // Continue even for a short page: the server may impose a smaller cap.
+    }
+    await afterMergeListener?.();
+
+    for (const note of await getDirtyNotes()) await pushNote(note.id, userId);
+    await afterMergeListener?.();
+    const pending = (await getDirtyNotes()).length > 0;
+    statusListener?.(pending ? 'pending' : 'synced');
+    if (pending) syncSoon();
   } catch (err) {
     console.error('sync failed', err);
-    setStatus('error');
+    statusListener?.('error');
+    // Surface merges already committed before a later request failed.
+    try { await afterMergeListener?.(); } catch (refreshError) { console.error(refreshError); }
   } finally {
     running = false;
   }
 }
 
-let afterMergeListener: (() => void) | null = null;
-export function onAfterMerge(cb: () => void) {
-  afterMergeListener = cb;
-}
-
-// Debounced sync after local edits (3s).
 let editTimer: number | null = null;
 export function syncSoon() {
   if (editTimer !== null) clearTimeout(editTimer);
-  editTimer = window.setTimeout(() => void sync(), 3000);
+  editTimer = window.setTimeout(() => {
+    editTimer = null;
+    void sync();
+  }, 3000);
 }
 
-// Timer trigger while the app is visible.
 setInterval(() => {
   if (document.visibilityState === 'visible') void sync();
 }, 30_000);
-
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') void sync();
 });
 window.addEventListener('online', () => void sync());
+window.addEventListener('offline', () => statusListener?.('offline'));

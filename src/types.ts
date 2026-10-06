@@ -5,6 +5,24 @@ export interface Note {
   updatedAt: number;
   deleted: boolean;
   dirty: boolean;
+  // Last server state acknowledged by this device. Optional for existing notes.
+  synced?: {
+    content: string;
+    deleted: boolean;
+    serverUpdatedAt: string;
+  };
+}
+
+export function conflictCopy(content: string): Note {
+  const now = Date.now();
+  return {
+    id: newId(),
+    content: '(conflict copy)\n\n' + content,
+    createdAt: now,
+    updatedAt: now,
+    deleted: false,
+    dirty: true,
+  };
 }
 
 export function newId(): string {

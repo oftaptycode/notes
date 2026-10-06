@@ -14,7 +14,11 @@
     <aside id="list-pane">
       <header id="list-header">
         <input id="search" type="search" placeholder="Search notes" autocomplete="off" />
-        <button id="new-note" aria-label="New note" title="New note">+</button>
+        <button id="new-note" aria-label="New note" title="New note">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </button>
       </header>
       <div id="auth-bar">
         <span id="sync-dot" title="Sync status"></span>
@@ -45,8 +49,27 @@
         <button id="delete-note">Delete</button>
       </header>
       <div id="editor"></div>
+      <footer id="note-footer" hidden>
+        <time id="note-created"></time>
+      </footer>
     </main>
   </div>
+  <dialog id="delete-dialog" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description">
+    <form method="dialog">
+      <div class="dialog-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" />
+        </svg>
+      </div>
+      <h2 id="delete-dialog-title">Delete note?</h2>
+      <p class="dialog-note">“<span id="delete-dialog-note"></span>”</p>
+      <p id="delete-dialog-description">This note will be removed. You can’t undo this action.</p>
+      <div class="dialog-actions">
+        <button type="submit" value="cancel" autofocus>Cancel</button>
+        <button type="submit" value="delete" class="danger-button">Delete note</button>
+      </div>
+    </form>
+  </dialog>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

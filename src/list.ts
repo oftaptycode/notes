@@ -1,4 +1,5 @@
-import type { Note } from './types';
+import { titleFromContent, type Note } from './types';
+import { formatCreatedAt } from './dates';
 
 const CARD_H = 190;
 const GAP = 10;
@@ -56,13 +57,29 @@ export function createList(
         const n = filtered[i];
         const card = document.createElement('div');
         card.className = 'note-card' + (n.id === activeId ? ' active' : '');
+        card.tabIndex = 0;
+        card.setAttribute('role', 'button');
+        card.setAttribute('aria-label', titleFromContent(n.content));
+        card.setAttribute('aria-pressed', String(n.id === activeId));
         const preview = document.createElement('div');
         preview.className = 'card-preview';
         const lines = n.content.split('\n');
         preview.textContent =
           lines.slice(0, 6).join('\n') + (lines.length > 6 ? ' …' : '');
         card.appendChild(preview);
+        const created = document.createElement('time');
+        created.className = 'card-created';
+        created.textContent = formatCreatedAt(n.createdAt);
+        const date = new Date(n.createdAt);
+        if (Number.isFinite(date.getTime())) created.dateTime = date.toISOString();
+        card.appendChild(created);
         card.addEventListener('click', () => onOpen(n.id));
+        card.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onOpen(n.id);
+          }
+        });
         rowDiv.appendChild(card);
       }
       frag.appendChild(rowDiv);

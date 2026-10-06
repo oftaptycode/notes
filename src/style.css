@@ -3,6 +3,8 @@
   color-scheme: dark;
   --bg: #13171a;
   --surface: #181d21;
+  --card: #20272c;
+  --card-hover: #252e34;
   --fg: #e4e8e6;
   --muted: #8d989c;
   --border: #262d32;
@@ -60,7 +62,7 @@ button {
 }
 button:hover { background: var(--row-hover); border-color: var(--marker); }
 button:active { opacity: 0.7; }
-button:focus-visible, input:focus-visible {
+button:focus-visible, input:focus-visible, .note-card:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -96,15 +98,18 @@ button:focus-visible, input:focus-visible {
 #search::placeholder { color: var(--muted); }
 
 #new-note {
-  font-size: 24px;
-  font-weight: 400;
-  line-height: 1;
-  padding: 0 12px;
-  border-radius: 22px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-fg);
 }
+#new-note svg { display: block; width: 24px; height: 24px; }
 #new-note:hover { background: var(--accent); border-color: var(--accent); opacity: 0.88; }
 
 #auth-bar {
@@ -119,7 +124,7 @@ button:focus-visible, input:focus-visible {
 #auth-user { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
 #sync-dot[data-state="synced"] { background: #2e9e5b; }
-#sync-dot[data-state="syncing"] { background: #d9a520; }
+#sync-dot[data-state="syncing"], #sync-dot[data-state="pending"] { background: #d9a520; }
 #sync-dot[data-state="offline"], #sync-dot[data-state="local"], #sync-dot[data-state="disabled"] { background: var(--marker); }
 #sync-dot[data-state="error"] { background: var(--danger); }
 
@@ -171,14 +176,20 @@ button:focus-visible, input:focus-visible {
   padding: 14px 14px 14px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: var(--surface, var(--bg));
+  background: var(--card);
   overflow: hidden;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.note-card:hover { background: var(--row-hover); }
+.note-card:hover { background: var(--card-hover); }
+.note-card, .note-card * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.card-created { flex: none; color: var(--muted); font-size: 11px; line-height: 1.4; }
 .card-preview {
   flex: 1;
   font-size: 13.5px;
@@ -210,13 +221,58 @@ button:focus-visible, input:focus-visible {
 }
 #editor-header button { border-color: transparent; color: var(--muted); }
 #editor-header button:hover { color: var(--fg); border-color: var(--border); }
-#delete-note { color: var(--danger); }
-#delete-note:hover { color: var(--danger); border-color: var(--danger); }
+#editor-header #delete-note, .dialog-actions .danger-button {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #26100e;
+}
+#editor-header #delete-note:hover, .dialog-actions .danger-button:hover { filter: brightness(1.08); }
+#editor-header #delete-note:disabled { opacity: 0.45; cursor: default; }
 #back { color: var(--accent); }
 
 #save-state { flex: 1; text-align: center; font-size: 12px; color: var(--muted); }
 
+#delete-dialog {
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+#delete-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.64);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+#delete-dialog form { padding: 24px; }
+.dialog-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: rgba(240, 132, 123, 0.12);
+  color: var(--danger);
+}
+.dialog-icon svg { display: block; width: 24px; height: 24px; }
+#delete-dialog h2 { margin: 20px 0 8px; font-size: 22px; line-height: 1.2; letter-spacing: -0.02em; }
+#delete-dialog p { margin: 8px 0 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
+#delete-dialog .dialog-note { color: var(--fg); overflow-wrap: anywhere; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+
 #editor { flex: 1; min-height: 0; }
+#note-footer {
+  flex: none;
+  padding: 8px 24px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
 
 .cm-editor { height: 100%; font-size: 15px; }
 .cm-editor.cm-focused { outline: none; }
@@ -284,17 +340,6 @@ button:focus-visible, input:focus-visible {
   color: var(--link);
   text-decoration: underline;
   text-underline-offset: 3px;
-}
-/* bracketed text that isn't a real link — no blue, no underline */
-.md-bare-link,
-.md-bare-link span {
-  color: var(--fg);
-  font-family: inherit;
-  font-size: inherit;
-  font-weight: inherit;
-  font-style: inherit;
-  text-decoration: none;
-  background-color: transparent;
 }
 
 #back { display: none; }
