@@ -10,10 +10,11 @@ const HEADINGS: Record<string, string> = {
   SetextHeading1: 'md-h1', SetextHeading2: 'md-h2',
 };
 const HIDDEN_MARKERS = new Set([
-  'HeaderMark', 'QuoteMark', 'ListMark', 'TaskMarker', 'EmphasisMark',
+  // ListMark and TaskMarker stay visible, including their following whitespace.
+  'HeaderMark', 'QuoteMark', 'EmphasisMark',
   'StrikethroughMark', 'CodeMark', 'CodeInfo', 'HorizontalRule',
 ]);
-const LEADING_MARKERS = new Set(['HeaderMark', 'QuoteMark', 'ListMark']);
+const LEADING_MARKERS = new Set(['HeaderMark', 'QuoteMark']);
 
 interface Formatting {
   decorations: DecorationSet;
