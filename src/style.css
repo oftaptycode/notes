@@ -206,6 +206,11 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 
 
 #editor-pane {
+  --lava-shade-top: 0.82;
+  --lava-shade-bottom: 0.88;
+  --muted: #9fa9ae;
+  position: relative;
+  isolation: isolate;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -226,6 +231,73 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
   border-color: var(--danger);
   color: #26100e;
 }
+
+/* Three independently drifting, blurred pools form the lava-like gradient.
+   This layer is decorative: it never blocks selection, scrolling or controls. */
+.note-lava {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #080b0e;
+}
+.note-lava::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(8, 11, 14, var(--lava-shade-top)),
+    rgba(8, 11, 14, var(--lava-shade-bottom)));
+}
+.lava-blob {
+  position: absolute;
+  width: 100%;
+  height: 115%;
+  border-radius: 42% 58% 57% 43% / 39% 43% 57% 61%;
+  filter: blur(clamp(32px, 5vw, 64px));
+  will-change: transform;
+  transition: background-color 1.8s ease;
+}
+.lava-blob-one {
+  top: -35%;
+  left: -30%;
+  background-color: var(--lava-1, #929aa5);
+  animation: lava-one 31s ease-in-out -9s infinite alternate;
+}
+.lava-blob-two {
+  right: -40%;
+  bottom: -35%;
+  opacity: 0.8;
+  border-radius: 58% 42% 35% 65% / 53% 34% 66% 47%;
+  background-color: var(--lava-2, #5e6875);
+  animation: lava-two 43s ease-in-out -23s infinite alternate;
+}
+.lava-blob-three {
+  top: 25%;
+  left: 15%;
+  width: 80%;
+  height: 85%;
+  opacity: 0.65;
+  background-color: var(--lava-3, #c2c7d0);
+  animation: lava-three 37s ease-in-out -16s infinite alternate;
+}
+@keyframes lava-one {
+  0% { transform: translate3d(-12%, -8%, 0) rotate(-20deg) scale(1.1, 0.85); }
+  50% { transform: translate3d(45%, 30%, 0) rotate(35deg) scale(0.8, 1.2); }
+  100% { transform: translate3d(10%, 60%, 0) rotate(100deg) scale(1.15, 0.9); }
+}
+@keyframes lava-two {
+  0% { transform: translate3d(5%, 15%, 0) rotate(15deg) scale(0.9, 1.15); }
+  50% { transform: translate3d(-45%, -30%, 0) rotate(-40deg) scale(1.2, 0.85); }
+  100% { transform: translate3d(-15%, -60%, 0) rotate(-100deg) scale(0.9, 1.1); }
+}
+@keyframes lava-three {
+  0% { transform: translate3d(-25%, 20%, 0) rotate(-45deg) scale(0.7, 1.2); }
+  50% { transform: translate3d(20%, -35%, 0) rotate(30deg) scale(1.25, 0.8); }
+  100% { transform: translate3d(-35%, -20%, 0) rotate(95deg) scale(0.85, 1.1); }
+}
+#editor-header, #editor, #note-footer { position: relative; z-index: 1; }
 #editor-header #delete-note:hover, .dialog-actions .danger-button:hover { filter: brightness(1.08); }
 #editor-header #delete-note:disabled { opacity: 0.45; cursor: default; }
 #back { color: var(--accent); }
@@ -266,13 +338,48 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 
 #editor { flex: 1; min-height: 0; }
 #note-footer {
+  display: block;
   flex: none;
-  padding: 8px 24px 12px;
+  padding: 0 24px 8px;
   border-top: 1px solid var(--border);
   color: var(--muted);
   font-size: 12px;
   line-height: 1.4;
 }
+#note-footer[hidden], #note-mood[hidden], #note-mood-probabilities[hidden] { display: none; }
+#note-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 6px 0;
+  list-style: none;
+  cursor: pointer;
+}
+#note-summary::marker { content: ''; }
+#note-summary::-webkit-details-marker { display: none; }
+#note-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.note-summary-text { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; flex: 1; min-width: 0; }
+.note-summary-chevron { flex: none; width: 16px; height: 16px; transition: transform 0.18s ease; }
+#note-details[open] .note-summary-chevron { transform: rotate(180deg); }
+#note-details:not([open]) > #note-mood-probabilities { display: none; }
+#note-mood-probabilities { min-width: 0; padding: 0 0 6px; font-size: 11px; line-height: 1.6; }
+#note-mood-probabilities .mood-probability { white-space: nowrap; }
+#note-mood-probabilities:not([data-state="fresh"]) { opacity: 0.65; }
+#note-mood { display: inline-flex; align-items: center; gap: 6px; }
+#note-mood::before { content: ''; width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
+#note-mood[data-state="fresh"] { color: var(--fg); }
+#note-mood:not([data-state="fresh"]) { opacity: 0.65; }
+#note-mood[data-state="updating"]::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--border);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: mood-spin 0.8s linear infinite;
+}
+@keyframes mood-spin { to { transform: rotate(360deg); } }
 
 .cm-editor { height: 100%; font-size: 15px; }
 .cm-editor.cm-focused { outline: none; }
@@ -345,6 +452,7 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 #back { display: none; }
 
 @media (max-width: 799px) {
+  #editor-pane { --lava-shade-top: 0.78; --lava-shade-bottom: 0.86; --muted: #a5adb0; }
   #list-pane { width: 100%; border-right: none; }
   #editor-pane { display: none; width: 100%; }
   body.note-open #list-pane { display: none; }
@@ -355,4 +463,6 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
+  .lava-blob { animation: none !important; }
+  #note-mood::after { animation: none !important; }
 }

@@ -7,6 +7,8 @@ import { supabase } from './supabase';
 import { sync, syncSoon, onSyncStatus, onBeforeSync, onAfterMerge } from './sync';
 import { saveEdit, type Edit } from './save';
 import { formatCreatedAt } from './dates';
+import { createMoodController } from './mood';
+import { createNoteBackground } from './noteBackground';
 import type { Session } from '@supabase/supabase-js';
 
 const LAST_NOTE_KEY = 'notes-last-note';
@@ -19,7 +21,14 @@ const deleteBtn = document.getElementById('delete-note') as HTMLButtonElement;
 const exportBtn = document.getElementById('export-note') as HTMLButtonElement;
 const saveState = document.getElementById('save-state')!;
 const noteFooter = document.getElementById('note-footer')!;
+const noteDetails = document.getElementById('note-details') as HTMLDetailsElement;
 const noteCreated = document.getElementById('note-created') as HTMLTimeElement;
+const noteBackground = createNoteBackground(document.getElementById('editor-pane')!);
+const mood = createMoodController(
+  document.getElementById('note-mood')!,
+  document.getElementById('note-mood-probabilities')!,
+  noteBackground,
+);
 const deleteDialog = document.getElementById('delete-dialog') as HTMLDialogElement;
 const deleteDialogNote = document.getElementById('delete-dialog-note')!;
 
@@ -58,6 +67,7 @@ async function refreshNotes() {
       editorContent = current.content;
       editor.setContent(current.content);
     }
+    mood.updateContent(current.id, editor.getContent());
   }
 }
 
@@ -69,6 +79,8 @@ function showCreationDate(note: Note) {
 }
 
 function clearCurrent() {
+  noteDetails.open = false;
+  mood.clear();
   if (deleteDialog.open) deleteDialog.close('cancel');
   currentId = null;
   editorContent = '';
@@ -108,6 +120,7 @@ function saveChangedDocument() {
   if (content === editorContent) return;
   const edit = { id: currentId, content, previousContent: editorContent };
   editorContent = content;
+  mood.updateContent(currentId, content);
   saveState.textContent = 'Saving…';
   // Persist each edit now, including deletion when its content becomes empty.
   queueEdit(edit);
@@ -137,6 +150,7 @@ async function saveNow(discardEmpty = false): Promise<boolean> {
 }
 
 function showNote(note: Note) {
+  if (currentId !== note.id) noteDetails.open = false;
   if (currentId !== note.id || editor.getContent() !== note.content) {
     editorContent = note.content;
     editor.setContent(note.content);
@@ -146,6 +160,7 @@ function showNote(note: Note) {
   deleteBtn.disabled = false;
   exportBtn.disabled = false;
   showCreationDate(note);
+  mood.openNote(note.id, note.content);
   localStorage.setItem(LAST_NOTE_KEY, note.id);
   list.setActive(note.id);
   document.body.classList.add('note-open');
@@ -262,6 +277,7 @@ onAfterMerge(async () => {
 });
 
 function updateAuthUI(session: Session | null) {
+  mood.setUser(session?.user.id ?? null);
   authUser.textContent = session?.user.email ?? '';
   authBtn.textContent = session ? 'Sign out' : 'Sign in';
   authBtn.disabled = false;

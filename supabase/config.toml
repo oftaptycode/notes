@@ -1,0 +1,6 @@
+project_id = "notes"
+
+[functions.note-mood]
+# The handler verifies the bearer token with Supabase Auth and checks MOOD_USER_ID.
+# This also supports projects using newer asymmetric signing keys.
+verify_jwt = false

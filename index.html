@@ -42,6 +42,11 @@
       </div>
     </aside>
     <main id="editor-pane">
+      <div class="note-lava" aria-hidden="true">
+        <div class="lava-blob lava-blob-one"></div>
+        <div class="lava-blob lava-blob-two"></div>
+        <div class="lava-blob lava-blob-three"></div>
+      </div>
       <header id="editor-header">
         <button id="back" aria-label="Back to notes">&larr; Notes</button>
         <span id="save-state"></span>
@@ -50,7 +55,18 @@
       </header>
       <div id="editor"></div>
       <footer id="note-footer" hidden>
-        <time id="note-created"></time>
+        <details id="note-details">
+          <summary id="note-summary" title="Show or hide mood probabilities">
+            <span class="note-summary-text">
+              <time id="note-created"></time>
+              <span id="note-mood" role="status" aria-live="polite" aria-atomic="true" hidden></span>
+            </span>
+            <svg class="note-summary-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </summary>
+          <div id="note-mood-probabilities" hidden></div>
+        </details>
       </footer>
     </main>
   </div>
