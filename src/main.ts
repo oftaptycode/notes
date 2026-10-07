@@ -1,4 +1,4 @@
-import { getAllNotes, getNote, putNote, updateNotes } from './db';
+import { getAllNotes, getNote, getNotes, putNote, updateNotes } from './db';
 import { createEditor } from './editor';
 import { createList } from './list';
 import { newId, titleFromContent, type Note } from './types';
@@ -33,6 +33,7 @@ const deleteDialog = document.getElementById('delete-dialog') as HTMLDialogEleme
 const deleteDialogNote = document.getElementById('delete-dialog-note')!;
 
 let notes: Note[] = [];
+const notesById = new Map<string, Note>();
 let currentId: string | null = null;
 let editorContent = '';
 let writeQueue = Promise.resolve();
@@ -54,20 +55,59 @@ const list = createList(
 async function refreshNotes() {
   const version = ++refreshVersion;
   const next = await getAllNotes();
-  if (version !== refreshVersion) return;
+  if (version !== refreshVersion) return refreshNotes();
   notes = next;
+  notesById.clear();
+  for (const note of notes) notesById.set(note.id, note);
   list.setItems(notes);
+  reconcileCurrent();
+}
+
+function applyNotes(changed: Note[]) {
+  refreshVersion++;
+  for (const note of changed) {
+    const index = notes.findIndex(item => item.id === note.id);
+    if (index >= 0) notes.splice(index, 1);
+    notesById.delete(note.id);
+    if (note.deleted) continue;
+    notesById.set(note.id, note);
+    let low = 0, high = notes.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if (notes[mid].updatedAt > note.updatedAt) low = mid + 1;
+      else high = mid;
+    }
+    notes.splice(low, 0, note);
+  }
+  // The list batches cosmetic DOM/search work outside the persistence queue.
+  list.upsertItems(changed);
+  reconcileCurrent();
+}
+
+function reconcileCurrent() {
   if (!currentId || pendingEdits.has(currentId)) return;
-  const current = notes.find((n) => n.id === currentId);
+  const current = notesById.get(currentId);
   if (!current) {
     clearCurrent();
   } else {
-    showCreationDate(current);
-    if (editor.getContent() !== current.content) {
+    if (editorContent !== current.content) {
       editorContent = current.content;
       editor.setContent(current.content);
+      mood.updateContent(current.id, current.content);
     }
-    mood.updateContent(current.id, editor.getContent());
+  }
+}
+
+async function refreshChangedNotes(ids: string[]) {
+  // If a save commits while the read is in flight, retry the targeted read
+  // rather than overwriting the newer in-memory snapshot with a stale result.
+  while (true) {
+    await writeQueue;
+    const version = refreshVersion;
+    const changed = await getNotes(ids);
+    if (version !== refreshVersion) continue;
+    applyNotes(changed);
+    return;
   }
 }
 
@@ -100,13 +140,14 @@ function queueEdit(edit: Edit) {
   pendingEdits.set(edit.id, edit);
   writeQueue = writeQueue.then(async () => {
     try {
-      const saved = (await saveEdit(edit)).find((note) => note.id === edit.id);
+      const changed = await saveEdit(edit);
+      const saved = changed.find((note) => note.id === edit.id);
       if (pendingEdits.get(edit.id) === edit) pendingEdits.delete(edit.id);
       syncSoon();
       if (currentId === edit.id && !pendingEdits.has(edit.id)) {
         saveState.textContent = saved?.deleted ? 'Empty note discarded' : 'Saved';
       }
-      await refreshNotes();
+      applyNotes(changed);
     } catch (err) {
       console.error('save failed', err);
       if (currentId === edit.id) saveState.textContent = 'Save failed — keep this note open or copy its text';
@@ -201,7 +242,7 @@ async function createNote() {
     dirty: false,
   };
   await putNote(note);
-  await refreshNotes();
+  applyNotes([note]);
   if (!(await saveNow(true)) || version !== navigationVersion) return;
   showNote(note);
 }
@@ -231,7 +272,7 @@ async function deleteCurrent() {
   if (!(await confirmDeletion()) || currentId !== id || navigationVersion !== requestedVersion) return;
   const version = ++navigationVersion;
   if (!(await saveNow()) || version !== navigationVersion) return;
-  await updateNotes(id, (note) => note ? [{
+  const changed = await updateNotes(id, (note) => note ? [{
     ...note,
     deleted: true,
     dirty: true,
@@ -242,7 +283,7 @@ async function deleteCurrent() {
     clearCurrent();
     if ((history.state as { note?: string } | null)?.note) history.back();
   }
-  await refreshNotes();
+  applyNotes(changed);
 }
 
 editor.onDocChange(saveChangedDocument);
@@ -271,10 +312,7 @@ onSyncStatus((s) => {
 onBeforeSync(async () => {
   if (!(await saveNow())) throw new Error('Sync paused because local changes could not be saved.');
 });
-onAfterMerge(async () => {
-  await writeQueue;
-  await refreshNotes();
-});
+onAfterMerge(refreshChangedNotes);
 
 function updateAuthUI(session: Session | null) {
   mood.setUser(session?.user.id ?? null);

@@ -35,9 +35,12 @@ export function newId(): string {
 }
 
 export function titleFromContent(content: string): string {
-  const lines = content.split('\n');
-  for (const raw of lines) {
-    const line = raw.trim();
+  let from = 0;
+  while (from < content.length) {
+    const newline = content.indexOf('\n', from);
+    const to = newline < 0 ? content.length : newline;
+    const line = content.slice(from, to).trim();
+    from = to + 1;
     if (line.length === 0) continue;
     const stripped = line.replace(/^#{1,6}\s+/, '').replace(/^[-*+]\s+/, '').replace(/^[-*]\s*\[.\]\s+/, '');
     return stripped.length > 80 ? stripped.slice(0, 80) + '…' : stripped;

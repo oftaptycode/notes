@@ -23,9 +23,18 @@ npm run build
   when you leave them without typing.
 - Failed local writes retain the editor text and block note switching. Keep the
   app open, retry, or copy the text before closing it.
-- Sync downloads all notes in ID-paginated batches before uploading changes.
-  This deliberately favors correctness over incremental-sync optimization for
-  a small, single-user collection.
+- Sync checks ID-paginated server revisions before uploading changes and downloads
+  only new/changed note bodies, including tombstones. It uses no timestamp
+  watermark, so tied revisions and smaller server response caps remain safe.
+  Unchanged notes are not rewritten locally. Independent note IDs upload with
+  bounded concurrency, retaining per-note conditional revision checks.
+- Saves update only the affected in-memory notes/cards; no collection-wide read
+  runs after each edit. Full-text search is debounced and runs in a worker, with
+  normalized text cached per changed note (a cached fallback supports browsers
+  where workers are unavailable). Late search results cannot replace newer ones.
+- IndexedDB version 2 adds small revision/dirty metadata records, atomically
+  maintained with notes. Existing version-1 data is preserved and backfilled
+  during the upgrade. No backend schema changes are required.
 - Server writes compare the revision read by this device. If both devices edit
   a note, the local version stays in the original note and the server version
   is preserved as a `(conflict copy)`. Older dirty notes without a sync baseline
@@ -44,8 +53,10 @@ Do not switch accounts or Supabase projects without exporting your notes first.
 
 ## Regression tests
 
-The small regression suite covers transactional saves, stale-editor backups,
-Undo isolation, concurrent sync, conditional-write conflicts, and pagination.
+The regression suite covers transactional saves, stale-editor backups,
+Undo isolation, concurrent sync, conditional-write conflicts, pagination,
+revision-only reconciliation, database upgrades, incremental formatting, targeted
+UI updates, and asynchronous search.
 It uses a fake IndexedDB and a mock server, never a live Supabase project.
 
 ## Markdown display
@@ -58,7 +69,8 @@ custom `«…»` parser and its existing appearance are preserved.
 `src/markdown.ts` owns syntax hiding and structural decorations;
 `src/mdHighlight.ts` owns inline text styles; `src/guillemets.ts` owns the custom
 delimiter grammar. Rendering updates when the document or parse tree changes,
-not on every cursor movement.
+not on every cursor movement. Unchanged block trees reuse their mapped decorations;
+reference-definition changes also invalidate dependent reference links.
 
 ## Note mood
 

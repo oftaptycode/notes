@@ -37,6 +37,7 @@ export function baseline(r: RemoteRow): NonNullable<Note['synced']> {
 export function createBackend(initial: RemoteRow[] = []) {
   const rows = new Map(initial.map(r => [r.id, structuredClone(r)]));
   const events: string[] = [];
+  const reads: { columns: string; ids: string[] }[] = [];
   const hooks: {
     beforeSession?: () => Promise<void>;
     beforeWrite?: () => Promise<void>;
@@ -45,7 +46,7 @@ export function createBackend(initial: RemoteRow[] = []) {
   } = {};
   let revision = 0;
   const backend = {
-    rows, events, hooks, cap: 1000, failReads: false,
+    rows, events, reads, hooks, cap: 1000, failReads: false,
     client: {
       auth: { getSession: vi.fn(async () => {
         await hooks.beforeSession?.();
@@ -60,11 +61,13 @@ export function createBackend(initial: RemoteRow[] = []) {
     const filters: Array<(r: RemoteRow) => boolean> = [];
     let limit = Infinity;
     let sort: keyof RemoteRow = 'id';
+    let columns = '*';
     const q = {
-      select: () => q,
+      select: (selected = '*') => { columns = selected; return q; },
       update: (v: Partial<RemoteRow>) => { action = 'update'; values = v; return q; },
       insert: (v: Partial<RemoteRow>) => { action = 'insert'; values = v; return q; },
       eq: (key: keyof RemoteRow, value: string | boolean) => { filters.push(r => r[key] === value); return q; },
+      in: (key: keyof RemoteRow, values: string[]) => { filters.push(r => values.includes(String(r[key]))); return q; },
       gt: (key: keyof RemoteRow, value: string) => { filters.push(r => String(r[key]) > value); return q; },
       order: (key: keyof RemoteRow) => { sort = key; return q; },
       limit: (n: number) => { limit = n; return q; },
@@ -79,8 +82,12 @@ export function createBackend(initial: RemoteRow[] = []) {
         const result = [...rows.values()].filter(r => filters.every(f => f(r)))
           .sort((a, b) => String(a[sort]).localeCompare(String(b[sort])))
           .slice(0, Math.min(limit, backend.cap)).map(r => structuredClone(r));
+        reads.push({ columns, ids: result.map(r => r.id) });
+        const selected = columns === '*' ? result : result.map(r => Object.fromEntries(
+          columns.split(',').map(key => [key, r[key as keyof RemoteRow]]),
+        ));
         await hooks.afterRead?.();
-        return { data: single ? result[0] ?? null : result, error: null };
+        return { data: single ? selected[0] ?? null : selected, error: null };
       }
       events.push(action);
       await hooks.beforeWrite?.();
