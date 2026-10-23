@@ -205,6 +205,13 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 }
 
 
+/* Register the mood palette so a change interpolates smoothly. Without
+   registration these are unregistered custom properties and any `transition`
+   on them is ignored, which would make every mood change an instant repaint. */
+@property --lava-1 { syntax: '<color>'; inherits: true; initial-value: #929aa5; }
+@property --lava-2 { syntax: '<color>'; inherits: true; initial-value: #5e6875; }
+@property --lava-3 { syntax: '<color>'; inherits: true; initial-value: #c2c7d0; }
+
 #editor-pane {
   --lava-shade-top: 0.82;
   --lava-shade-bottom: 0.88;
@@ -215,6 +222,9 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* Mood palette changes crossfade here: noteBackground.ts writes these
+     properties on this element, and the blob gradients inherit the result. */
+  transition: --lava-1 1.8s ease, --lava-2 1.8s ease, --lava-3 1.8s ease;
 }
 
 #editor-header {
@@ -232,8 +242,15 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
   color: #26100e;
 }
 
-/* Three independently drifting, blurred pools form the lava-like gradient.
-   This layer is decorative: it never blocks selection, scrolling or controls. */
+/* Three independently drifting, soft pools form the lava-like gradient.
+   This layer is decorative: it never blocks selection, scrolling or controls.
+
+   The pools are painted with radial gradients rather than `filter: blur()` on a
+   solid fill. A gradient already carries its own soft falloff, so the blur was
+   doing redundant work: because blur is scale-dependent, the original animated
+   `scale()` forced Chromium to re-raster a viewport-sized filtered surface
+   every frame, which dominated INP presentation delay. Gradients are rastered
+   once; only `translate` is animated, so the transform stays compositor-only. */
 .note-lava {
   position: absolute;
   inset: 0;
@@ -252,25 +269,31 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 }
 .lava-blob {
   position: absolute;
-  width: 100%;
-  height: 115%;
-  border-radius: 42% 58% 57% 43% / 39% 43% 57% 61%;
-  filter: blur(clamp(32px, 5vw, 64px));
+  background-repeat: no-repeat;
+  /* Promote each pool to its own composited layer so the main thread never
+     repaints them. This was present before the gradient change and was removed
+     as unnecessary; without it Chromium may demote viewport-sized layers and
+     fall back to main-thread painting, which shows up as presentation delay.
+     Affordable again now that there is no blur surface to re-raster. */
   will-change: transform;
-  transition: background-color 1.8s ease;
 }
 .lava-blob-one {
   top: -35%;
   left: -30%;
-  background-color: var(--lava-1, #929aa5);
+  width: 100%;
+  height: 115%;
+  background-image: radial-gradient(closest-side ellipse at 50% 50%,
+    var(--lava-1, #929aa5) 0%, var(--lava-1, #929aa5) 30%, transparent 72%);
   animation: lava-one 31s ease-in-out -9s infinite alternate;
 }
 .lava-blob-two {
+  top: -30%;
   right: -40%;
-  bottom: -35%;
+  width: 100%;
+  height: 115%;
   opacity: 0.8;
-  border-radius: 58% 42% 35% 65% / 53% 34% 66% 47%;
-  background-color: var(--lava-2, #5e6875);
+  background-image: radial-gradient(closest-side ellipse at 50% 50%,
+    var(--lava-2, #5e6875) 0%, var(--lava-2, #5e6875) 30%, transparent 72%);
   animation: lava-two 43s ease-in-out -23s infinite alternate;
 }
 .lava-blob-three {
@@ -279,24 +302,29 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
   width: 80%;
   height: 85%;
   opacity: 0.65;
-  background-color: var(--lava-3, #c2c7d0);
+  background-image: radial-gradient(closest-side ellipse at 50% 50%,
+    var(--lava-3, #c2c7d0) 0%, var(--lava-3, #c2c7d0) 30%, transparent 72%);
   animation: lava-three 37s ease-in-out -16s infinite alternate;
 }
+/* Translate only. Scale and rotation are deliberately absent: they would defeat
+   the cached raster and reintroduce per-frame repainting. */
 @keyframes lava-one {
-  0% { transform: translate3d(-12%, -8%, 0) rotate(-20deg) scale(1.1, 0.85); }
-  50% { transform: translate3d(45%, 30%, 0) rotate(35deg) scale(0.8, 1.2); }
-  100% { transform: translate3d(10%, 60%, 0) rotate(100deg) scale(1.15, 0.9); }
+  0% { transform: translate3d(-12%, -8%, 0); }
+  50% { transform: translate3d(45%, 30%, 0); }
+  100% { transform: translate3d(10%, 60%, 0); }
 }
 @keyframes lava-two {
-  0% { transform: translate3d(5%, 15%, 0) rotate(15deg) scale(0.9, 1.15); }
-  50% { transform: translate3d(-45%, -30%, 0) rotate(-40deg) scale(1.2, 0.85); }
-  100% { transform: translate3d(-15%, -60%, 0) rotate(-100deg) scale(0.9, 1.1); }
+  0% { transform: translate3d(5%, 15%, 0); }
+  50% { transform: translate3d(-45%, -30%, 0); }
+  100% { transform: translate3d(-15%, -60%, 0); }
 }
 @keyframes lava-three {
-  0% { transform: translate3d(-25%, 20%, 0) rotate(-45deg) scale(0.7, 1.2); }
-  50% { transform: translate3d(20%, -35%, 0) rotate(30deg) scale(1.25, 0.8); }
-  100% { transform: translate3d(-35%, -20%, 0) rotate(95deg) scale(0.85, 1.1); }
+  0% { transform: translate3d(-25%, 20%, 0); }
+  50% { transform: translate3d(20%, -35%, 0); }
+  100% { transform: translate3d(-35%, -20%, 0); }
 }
+/* Pause while the tab is hidden or no note is open; nothing is being looked at. */
+.lava-paused .lava-blob { animation-play-state: paused; }
 #editor-header, #editor, #note-footer { position: relative; z-index: 1; }
 #editor-header #delete-note:hover, .dialog-actions .danger-button:hover { filter: brightness(1.08); }
 #editor-header #delete-note:disabled { opacity: 0.45; cursor: default; }
@@ -337,6 +365,11 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
 
 #editor { flex: 1; min-height: 0; }
+/* The editor is transparent and sits directly over the animated background.
+   Without its own compositing layer, every keystroke and scroll repaint has to
+   re-raster a region that also blends the moving backdrop. Promoting it keeps
+   those repaints confined to the editor's own layer. */
+#editor { will-change: transform; }
 #note-footer {
   display: block;
   flex: none;
@@ -466,3 +499,13 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
   .lava-blob { animation: none !important; }
   #note-mood::after { animation: none !important; }
 }
+
+/* A/B switch: `?nolava` freezes the pools so INP presentation delay can be
+   attributed to them without touching source. See src/main.ts. */
+.no-lava .lava-blob { animation: none !important; }
+
+/* A/B switch: `?lavacalm` leaves one pool drifting. Comparing it against
+   `?nolava` isolates per-frame blend cost (animated layers) from one-time
+   raster cost, without changing any colors or geometry. */
+.lava-calm .lava-blob-two,
+.lava-calm .lava-blob-three { animation: none !important; }

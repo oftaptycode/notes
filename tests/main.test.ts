@@ -45,15 +45,20 @@ it('persists edits and conflict backups without collection scans or editor reset
       mocked.state.content = text;
       mocked.state.change!();
     }
-    await vi.waitFor(() => expect(mocked.list.upsertItems).toHaveBeenCalledTimes(3));
+    // A burst of keystrokes coalesces into one write carrying the newest text.
+    await vi.waitFor(() => expect(mocked.list.upsertItems).toHaveBeenCalledTimes(1));
     expect(await db.getNote('n')).toMatchObject({ content: 'latest', dirty: true });
     expect(scans).toHaveBeenCalledOnce();
     expect(mocked.editor.setContent).not.toHaveBeenCalled();
+    // Coalescing kept the first unflushed baseline, so our own unsaved work is
+    // never mistaken for another device's edit. getAllNotes is spied here, so
+    // read through the unscanned variant instead.
+    expect((await db.getAllIncludingDeleted()).map((n: { content: string }) => n.content)).toEqual(['latest']);
 
     await db.putNote(note('n', 'other tab'));
     mocked.state.content = 'my continuing edit';
     mocked.state.change!();
-    await vi.waitFor(() => expect(mocked.list.upsertItems).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => expect(mocked.list.upsertItems).toHaveBeenCalledTimes(2));
     expect(mocked.list.upsertItems.mock.calls.at(-1)![0].map((n: { content: string }) => n.content))
       .toContain('(conflict copy)\n\nother tab');
     expect(mocked.editor.setContent).not.toHaveBeenCalled();
@@ -69,5 +74,41 @@ it('persists edits and conflict backups without collection scans or editor reset
     await vi.waitFor(() => expect(document.getElementById('delete-note')!.hasAttribute('disabled')).toBe(true));
     expect(await db.getNote('n')).toMatchObject({ deleted: true, dirty: true });
     expect(scans).toHaveBeenCalledOnce();
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it('bounds a sustained typing burst to one write per note and flushes the final text on navigation', async () => {
+  vi.resetModules();
+  resetDatabase();
+  vi.stubGlobal('matchMedia', () => ({ matches: false }));
+  const html = readFileSync('index.html', 'utf8');
+  document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
+  const db = await import('../src/db');
+  await db.putNote(note('n', 'initial'));
+  localStorage.setItem('notes-last-note', 'n');
+  try {
+    await import('../src/main');
+    await vi.waitFor(() => expect((document.getElementById('new-note') as HTMLButtonElement).disabled).toBe(false));
+    mocked.list.upsertItems.mockClear();
+
+    // Simulate holding the write open so the whole burst lands before any write
+    // commits. Queued work must stay bounded instead of growing per keystroke.
+    const writes = vi.spyOn(db, 'updateNotes');
+    for (let i = 1; i <= 60; i++) {
+      mocked.state.content = 'edit ' + i;
+      mocked.state.change!();
+    }
+    await vi.waitFor(() => expect(mocked.list.upsertItems).toHaveBeenCalled());
+    const committed = writes.mock.calls.length;
+    expect(committed).toBeLessThan(10);
+    expect(await db.getNote('n')).toMatchObject({ content: 'edit 60', dirty: true });
+    // Still exactly one note: no duplicated or lost snapshots.
+    expect(await db.getAllIncludingDeleted()).toHaveLength(1);
+
+    // A blank edit still discards the note, and navigation flushes everything.
+    mocked.state.content = '   \n\t ';
+    mocked.state.change!();
+    await vi.waitFor(() => expect(document.getElementById('delete-note')!.hasAttribute('disabled')).toBe(true));
+    expect(await db.getNote('n')).toMatchObject({ deleted: true });
   } finally { vi.unstubAllGlobals(); }
 });

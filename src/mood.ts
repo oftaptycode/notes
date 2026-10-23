@@ -2,7 +2,7 @@ import { openDB, type DBSchema } from 'idb';
 import { supabase } from './supabase';
 import type { NoteBackground } from './noteBackground';
 import {
-  isMood, parseMoodProbabilities, hasEnoughMoodContent, MAX_MOOD_CONTENT_LENGTH, MOOD_MODEL, MOOD_VERSION, LEGACY_MOOD_VERSION,
+  isMood, isBlankContent, parseMoodProbabilities, hasEnoughMoodContent, MAX_MOOD_CONTENT_LENGTH, MOOD_MODEL, MOOD_VERSION, LEGACY_MOOD_VERSION,
   type Mood, type MoodProbability,
 } from '../supabase/functions/_shared/moods';
 
@@ -34,6 +34,10 @@ export function createMoodController(element: HTMLElement, distribution: HTMLEle
   let request: AbortController | null = null;
   let attempted = false;
   const memory = new Map<string, CachedMood | null>();
+  // Derived distribution state, rebuilt only when the probabilities change.
+  let renderedProbabilities: readonly MoodProbability[] | null = null;
+  let distributionItems: { text: string; probability: number }[] = [];
+  let distributionText = '';
   const keyFor = (id: string, user: string, version = MOOD_VERSION) => `${MOOD_MODEL}:${version}:${user}:${id}`;
 
   function hide() {
@@ -73,24 +77,36 @@ export function createMoodController(element: HTMLElement, distribution: HTMLEle
     distribution.dataset.state = state;
     distribution.hidden = false;
     if (cached?.probabilities) {
-      const visible = cached.probabilities.filter(entry => Math.round(entry.probability * 100) > 0);
-      distribution.hidden = visible.length === 0;
-      const text = visible.map(entry => `${entry.value} (${Math.round(entry.probability * 100)}%)`).join(', ');
-      if (distribution.textContent !== text) {
+      // render() runs on every keystroke. Rebuild the 28-entry filter/map/join
+      // only when the distribution itself changes. The DOM fragment is built at
+      // mount time instead: a DocumentFragment is emptied by insertion, so it
+      // cannot be cached and reused.
+      if (cached.probabilities !== renderedProbabilities) {
+        renderedProbabilities = cached.probabilities;
+        distributionItems = cached.probabilities
+          .filter(entry => Math.round(entry.probability * 100) > 0)
+          .map(entry => ({ text: `${entry.value} (${Math.round(entry.probability * 100)}%)`, probability: entry.probability }));
+        distributionText = distributionItems.map(item => item.text).join(', ');
+      }
+      distribution.hidden = distributionItems.length === 0;
+      if (distribution.textContent !== distributionText) {
         const fragments = document.createDocumentFragment();
-        visible.forEach((entry, index) => {
+        distributionItems.forEach((item, index) => {
           if (index) fragments.append(document.createTextNode(', '));
-          const item = document.createElement('span');
-          item.className = 'mood-probability';
-          item.textContent = `${entry.value} (${Math.round(entry.probability * 100)}%)`;
-          item.title = `Returned probability: ${entry.probability}`;
-          fragments.append(item);
+          const node = document.createElement('span');
+          node.className = 'mood-probability';
+          node.textContent = item.text;
+          node.title = `Returned probability: ${item.probability}`;
+          fragments.append(node);
         });
         distribution.replaceChildren(fragments);
       }
       distribution.title = 'Mood-choice probabilities before the separate emotional-tone check. Entries rounding to 0% are hidden; rounded percentages may not total exactly 100%.';
       if (state !== 'fresh') distribution.title += ' This distribution is outdated or being refreshed.';
     } else {
+      renderedProbabilities = null;
+      distributionItems = [];
+      distributionText = '';
       distribution.textContent = state === 'updating' ? 'Fetching mood probabilities…'
         : cached ? 'Probability breakdown unavailable — update the mood service and reopen this note.'
         : 'Mood probabilities unavailable.';
@@ -211,14 +227,14 @@ export function createMoodController(element: HTMLElement, distribution: HTMLEle
 
   window.addEventListener('offline', () => {
     cancel();
-    if (note?.content.trim() && userId) {
+    if (note && !isBlankContent(note.content) && userId) {
       render(cached?.content === note.content ? 'fresh' : 'offline',
         cached?.content === note.content ? 'Cached mood available offline.'
           : 'The last mood is kept offline. Reconnect and reopen the note to update it.');
     }
   });
   window.addEventListener('online', () => {
-    if (note?.content.trim() && userId) renderCached();
+    if (note && !isBlankContent(note.content) && userId) renderCached();
   });
 
   return {

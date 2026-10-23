@@ -4,11 +4,37 @@ export const LEGACY_MOOD_VERSION = 'v3';
 export const MIN_MOOD_CONTENT_LENGTH = 100;
 export const MAX_MOOD_CONTENT_LENGTH = 50_000;
 
+// Matches the exact character set `String.prototype.trim` removes. Written as an
+// index scan because `content.trim()` allocates a copy of the whole note, and
+// these checks run on every keystroke on documents that can be hundreds of KB.
+function isWhitespaceCode(code: number): boolean {
+  return code === 0x20 || (code >= 0x09 && code <= 0x0d) || code === 0xa0 || code === 0x1680
+    || (code >= 0x2000 && code <= 0x200a) || code === 0x2028 || code === 0x2029
+    || code === 0x202f || code === 0x205f || code === 0x3000 || code === 0xfeff;
+}
+
+// True when the note holds nothing but whitespace, i.e. trimming empties it.
+// Non-allocating equivalent of `content.trim() === ''`.
+export function isBlankContent(content: string): boolean {
+  for (let i = 0; i < content.length; i++) {
+    if (!isWhitespaceCode(content.charCodeAt(i))) return false;
+  }
+  return true;
+}
+
 // Count Unicode characters, excluding leading/trailing whitespace. Stop at the
 // threshold so eligibility checks remain cheap while editing long notes.
 export function hasEnoughMoodContent(content: string): boolean {
+  let start = 0;
+  let end = content.length;
+  while (start < end && isWhitespaceCode(content.charCodeAt(start))) start++;
+  while (end > start && isWhitespaceCode(content.charCodeAt(end - 1))) end--;
   let length = 0;
-  for (const _character of content.trim()) {
+  for (let i = start; i < end; i++) {
+    // Step over a surrogate pair so one astral character counts once, as the
+    // previous `for...of` implementation counted code points.
+    const code = content.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) i++;
     if (++length >= MIN_MOOD_CONTENT_LENGTH) return true;
   }
   return false;

@@ -2,6 +2,13 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  server: {
+    // Bind every interface so the dev server is reachable from other devices on
+    // the LAN, which is how the mobile layout and background animation get
+    // tested on real hardware. Reach it by IP address: Vite still rejects
+    // requests whose Host header is not a permitted host.
+    host: true,
+  },
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',

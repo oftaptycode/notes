@@ -4,6 +4,91 @@ Date: 2026-10-07. Scope: all tracked application source, styles, HTML, backend
 functions, tests, dependency/build configuration, public assets, and the alternate
 files in `claude's/`. The audit itself made no application behavior changes.
 
+## Remediation round 2 — 2026-10-11, driven by INP
+
+A Chrome DevTools INP reading on the user's own machine reframed the priorities,
+so this round works from that rather than from further CPU profiling:
+
+| Subpart | ms | Share |
+| --- | ---: | ---: |
+| Input delay | 21 | 4% |
+| Processing duration | 208 | 38% |
+| Presentation delay | 322 | 58% |
+| **INP** | **552** | **poor** |
+
+`button#auth-btn` contributed 240 ms with **1 ms processing and 231 ms
+presentation delay**. That handler is either `signOut()` or toggling a hidden
+form, so there is effectively nothing to compute, yet the browser needed 231 ms
+to present a frame. Combined with 21 ms input delay, this rules out a blocked
+main thread: **the cost was frame production, not JavaScript.** Round 1's P1
+items (per-edit collection refresh, synchronous search, global decoration
+rebuilds) had already been remediated, and 21 ms input delay confirms it stuck.
+
+### What changed
+
+- **Background (the 322 ms).** The three decorative pools used `filter:
+  blur(clamp(32px, 5vw, 64px))`, permanent `will-change: transform`, and
+  keyframes animating **non-unit scale** (`1.1,0.85` → `0.8,1.2` → `1.15,0.9`).
+  Blur is scale-dependent, so animating scale forced repeated re-raster of a
+  surface several times viewport-sized; at DPR 3 the kernel is ~192 device px.
+  `.cm-editor` is transparent over these layers, so every editor repaint also
+  blended against a churning backdrop. They are now painted with
+  `radial-gradient` fills (a gradient already carries the falloff the blur was
+  synthesizing), the keyframes animate **translate only**, `will-change` is gone,
+  and the blobs pause when the tab is hidden or no note is open
+  (`src/style.css`, `src/main.ts`).
+- **Mood crossfade preserved.** `background-color` could no longer transition, so
+  the palette is registered with `@property` (`syntax: '<color>'`) and transitions
+  on `#editor-pane`, where `noteBackground.setMood` writes it. Unregistered
+  custom properties ignore `transition`; registering them keeps the 1.8 s fade.
+  The existing palette-identity guard in `noteBackground.ts` still prevents
+  typing from restarting a transition.
+- **Save queue (part of the 208 ms).** `queueEdit` no longer appends a task per
+  keystroke. At most one write task and one retained snapshot exist per note: a
+  `scheduled` set guards task creation and the task re-reads `pendingEdits`
+  after each write. Crucially the coalesced edit keeps the **first unflushed
+  `previousContent`**, not the previous keystroke's, because `saveEdit` compares
+  the stored note against it to detect external edits — comparing against the
+  previous keystroke would treat our own unsaved work as a conflict and write a
+  spurious conflict copy. This bounds the queue by construction rather than
+  evicting, since evicting a pending edit would drop user text.
+- **Typing-path allocations.** `content.trim()` was copying the entire note on
+  every keystroke in `hasEnoughMoodContent` and `saveEdit`. Both now use
+  non-allocating index scans (`isBlankContent`), with unit tests asserting
+  agreement with `trim()` including astral characters and the full whitespace
+  set. `titleFromContent` now skips leading whitespace by index and copies at
+  most a 1024-character window instead of slicing an unbounded line.
+- **Mood distribution.** `render()` runs per keystroke; the 28-entry
+  filter/map/join is now computed only when the probabilities change.
+
+### A/B switch
+
+`?nolava` freezes the pools (`.no-lava` on `<html>`) so presentation delay can
+be attributed without editing source. Load `?nolava` and a normal URL on the
+same interaction and compare the presentation-delay subpart. This round was
+implemented and unit-tested but **not yet measured on the user's hardware** —
+the before/after INP figures above are the only INP data collected so far.
+
+### Validation
+
+**34 tests passed across nine files** (29 existing plus 5 new covering save-queue
+coalescing, the queue depth bound, and the whitespace/title helpers);
+production TypeScript and Vite/PWA build passed; `@property` registration,
+gradient fills and the absence of `will-change`/`filter: blur()` were confirmed
+in the built CSS. Main JS 526.04 kB / 184.10 kB gzip (was 525.26 kB / 183.68 kB)
+and CSS 11.95 kB / 3.64 kB gzip (was 11.68 kB / 3.64 kB) — the pre-existing
+>500 kB bundle warning is unchanged and still out of scope. The benchmark
+script gained a `text` section comparing the new helpers against the `trim()`
+implementations they replaced.
+
+### Not addressed
+
+Editor text layout (justify + line wrap + spellcheck, `src/style.css:401`) is
+untouched and is the next suspect if presentation delay remains high after the
+`?nolava` A/B. Bundle splitting, the deferred editor creation at boot, the
+untouched P2 sync/list findings, and backend request bounding all remain as
+previously written.
+
 ## Remediation — summary items 1–4
 
 The user selected the first four items from the conversational summary:
@@ -577,7 +662,25 @@ Use a separate localhost origin/test browser profile. In that page's console:
 const { runPerformanceAudit } = await import('/docs/performance-benchmark.js');
 await runPerformanceAudit('editor');
 await runPerformanceAudit('storage');
+await runPerformanceAudit('text');
 ```
+
+The `text` section compares the current typing-path helpers against the exact
+`trim()` expressions they replaced, on 10 kB/100 kB/500 kB documents. The
+`editor` and `storage` sections are unchanged from the round-1 baseline, so they
+stay directly comparable with the numbers recorded above.
+
+For the 2026-10-11 INP finding, these sections are not sufficient: they measure
+main-thread CPU and cannot see rendering or compositing. Use the `?nolava` flag
+instead and compare INP presentation delay on the same interaction:
+
+```sh
+npm run dev -- --host 127.0.0.1 --port 4179 --strictPort
+```
+
+Load `http://127.0.0.1:4179/` and `http://127.0.0.1:4179/?nolava`, perform the
+same interaction in each, and record the presentation-delay subpart in DevTools
+→ Performance → Interaction to Next Paint.
 
 The storage section now reports targeted-list dispatch and worker search rather
 than the historical synchronous-render/search columns. `rawCollectionScan` is

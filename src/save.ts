@@ -1,5 +1,6 @@
 import { updateNotes } from './db';
 import { conflictCopy, type Note } from './types';
+import { isBlankContent } from '../supabase/functions/_shared/moods';
 
 export interface Edit {
   id: string;
@@ -9,7 +10,8 @@ export interface Edit {
 
 // Preserve a server/other-tab update that arrived after the editor loaded.
 export async function saveEdit(edit: Edit): Promise<Note[]> {
-  const deleted = edit.content.trim() === '';
+  // Scans in place: `trim()` would copy the entire note on every keystroke.
+  const deleted = isBlankContent(edit.content);
   return updateNotes(edit.id, (current) => {
     if (!current) throw new Error('The note is no longer available. Keep the editor open and copy its text.');
     if (current.deleted === deleted && current.content === edit.content) return [current];

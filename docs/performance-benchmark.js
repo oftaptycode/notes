@@ -2,7 +2,13 @@
 // Run against a Vite dev server on a separate localhost origin:
 // const { runPerformanceAudit } = await import('/docs/performance-benchmark.js');
 // await runPerformanceAudit('editor'); await runPerformanceAudit('storage');
+// await runPerformanceAudit('text');
 // Never reads or writes the application's notes databases.
+//
+// These sections measure main-thread CPU only. They cannot see rendering or
+// compositing cost. For INP — specifically the presentation-delay subpart, which
+// the animated background dominated — load the app with `?nolava` and compare
+// against a normal load in DevTools; see PERFORMANCE-AUDIT.md.
 
 async function dependency(source, name) {
   // Preserve Vite's query string: importing an unversioned URL can create a
@@ -135,13 +141,49 @@ async function storageBenchmark() {
   return results;
 }
 
+// Per-keystroke helpers that used to allocate a trimmed copy of the whole note.
+// Measured against the exact `trim()` implementations they replaced.
+async function textBenchmark() {
+  const { isBlankContent, hasEnoughMoodContent } = await import('/supabase/functions/_shared/moods.ts');
+  const { titleFromContent } = await import('/src/types.ts');
+  const results = [];
+  const para = 'Ordinary note prose that a person might plausibly write. ';
+  for (const chars of [10_000, 100_000, 500_000]) {
+    const doc = para.repeat(Math.ceil(chars / para.length)).slice(0, chars);
+    const singleLine = 'x'.repeat(chars); // worst case: one enormous line
+    const blanks = ' '.repeat(chars);      // worst case: leading/trailing whitespace
+    const rows = [];
+    for (const [label, input, run] of [
+      ['isBlankContent', doc, isBlankContent],
+      ['trim===""', doc, v => v.trim() === ''],
+      ['hasEnoughMoodContent', doc, hasEnoughMoodContent],
+      ['trim-count', doc, v => { let n = 0; for (const _c of v.trim()) if (++n >= 100) return true; return false; }],
+      ['titleFromContent', singleLine, titleFromContent],
+      ['title-whole-line', singleLine, v => titleFromContent(' ' + v)],
+      ['isBlankContent-ws', blanks, isBlankContent],
+      ['trim===""-ws', blanks, v => v.trim() === ''],
+    ]) {
+      const samples = [];
+      for (let i = 0; i < 20; i++) {
+        const start = performance.now();
+        run(input);
+        samples.push(performance.now() - start);
+      }
+      rows.push({ check: label, ...summarize(samples) });
+    }
+    results.push({ chars: doc.length, rows });
+  }
+  return results;
+}
+
 export async function runPerformanceAudit(section = 'editor') {
   if (!['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)) {
     throw new Error('Use a separate localhost Vite dev-server origin');
   }
   const results = section === 'editor' ? await editorBenchmark()
     : section === 'storage' ? await storageBenchmark()
-    : (() => { throw new Error('Choose editor or storage'); })();
+    : section === 'text' ? await textBenchmark()
+    : (() => { throw new Error('Choose editor, storage or text'); })();
   console.table(results);
   return { section, userAgent: navigator.userAgent,
     viewport: { width: innerWidth, height: innerHeight }, results };

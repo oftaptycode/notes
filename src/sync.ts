@@ -1,14 +1,35 @@
-import { getDirtyNotes, getNote, getSyncRevisions, hasDirtyNotes, updateNotes } from './db';
+import { getDirtyNotes, getNote, getSyncRevisions, updateNotes } from './db';
 import { supabase } from './supabase';
 import { conflictCopy, type Note } from './types';
 
 export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error' | 'disabled' | 'local' | 'pending';
 
 const PAGE_SIZE = 200;
+const SYNC_SOON_DELAY = 3000;
+const PUSH_ATTEMPTS = 3;
+const PUSH_BACKOFF_BASE = 30_000;
+const PUSH_BACKOFF_MAX = 15 * 60_000;
+
+// A note that kept losing the conditional-update race for every attempt in one
+// sync. Distinguished from a network/auth failure, which should still fail the
+// whole sync, because this one is specific to a single note and must back off
+// rather than be retried every few seconds forever.
+class PushConflict extends Error {}
+
 let running = false;
 let statusListener: ((s: SyncStatus) => void) | null = null;
 let beforeSyncListener: (() => Promise<void>) | null = null;
 let afterMergeListener: ((ids: string[]) => void | Promise<void>) | null = null;
+// Notes that exhausted their in-call conflict retries: attempt count and the
+// earliest time the note may be tried again.
+const pushFailures = new Map<string, { attempts: number; until: number }>();
+
+function deferPush(id: string) {
+  const attempts = (pushFailures.get(id)?.attempts ?? 0) + 1;
+  const delay = Math.min(PUSH_BACKOFF_BASE * 2 ** (attempts - 1), PUSH_BACKOFF_MAX);
+  pushFailures.set(id, { attempts, until: Date.now() + delay });
+}
+const readyForPush = (id: string, now: number) => (pushFailures.get(id)?.until ?? 0) <= now;
 
 export function onSyncStatus(cb: (s: SyncStatus) => void) { statusListener = cb; }
 export function onBeforeSync(cb: () => Promise<void>) { beforeSyncListener = cb; }
@@ -72,7 +93,7 @@ async function readRemote(id: string, userId: string): Promise<RemoteRow | null>
 }
 
 async function pushNote(id: string, userId: string, changed: Set<string>) {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < PUSH_ATTEMPTS; attempt++) {
     const snapshot = await getNote(id);
     if (!snapshot?.dirty) return;
     const values = {
@@ -108,6 +129,9 @@ async function pushNote(id: string, userId: string, changed: Set<string>) {
     if (!latest) throw new Error('A remote note is unavailable; your local changes have been kept.');
     await mergeRemote(latest, changed);
   }
+  // Falling out of the loop is a persistent conflict, not a silent success: the
+  // note is still dirty, and without this the caller would immediately reschedule.
+  throw new PushConflict(`Note ${id} kept conflicting with another device.`);
 }
 
 export async function sync(): Promise<void> {
@@ -176,18 +200,48 @@ export async function sync(): Promise<void> {
     await notifyChanges();
 
     const dirty = await getDirtyNotes();
+    const now = Date.now();
+    const ready = dirty.filter((n) => readyForPush(n.id, now));
+    // Every pending note is still backing off. Wait for the earliest cooldown
+    // instead of rescheduling every few seconds, so a permanently conflicting
+    // note cannot hammer the server indefinitely.
+    if (dirty.length > 0 && ready.length === 0) {
+      const soonest = Math.min(...dirty.map((n) => pushFailures.get(n.id)!.until));
+      statusListener?.('pending');
+      scheduleSync(Math.max(SYNC_SOON_DELAY, soonest - Date.now()));
+      return;
+    }
     let next = 0;
     // Different IDs can upload independently. Settle all workers even if one
     // fails, so no uploads outlive the single-flight lock or failure refresh.
-    const uploads = await Promise.allSettled(Array.from({ length: Math.min(4, dirty.length) }, async () => {
-      while (next < dirty.length) await pushNote(dirty[next++].id, userId, changed);
+    const uploads = await Promise.allSettled(Array.from({ length: Math.min(4, ready.length) }, async () => {
+      while (next < ready.length) {
+        const id = ready[next++].id;
+        try {
+          await pushNote(id, userId, changed);
+          pushFailures.delete(id);
+        } catch (err) {
+          // Only a conflict backs off and lets the other notes report normally.
+          // Network and auth failures still fail the whole sync below.
+          if (err instanceof PushConflict) { deferPush(id); continue; }
+          throw err;
+        }
+      }
     }));
     const failed = uploads.find(result => result.status === 'rejected');
     if (failed?.status === 'rejected') throw failed.reason;
     await notifyChanges();
-    const pending = await hasDirtyNotes();
-    statusListener?.(pending ? 'pending' : 'synced');
-    if (pending) syncSoon();
+    const pending = await getDirtyNotes();
+    statusListener?.(pending.length ? 'pending' : 'synced');
+    if (!pending.length) { pushFailures.clear(); return; }
+    // Reschedule at the earliest actionable time. Notes still cooling down wait
+    // for their own cooldown; anything else (a failed write, a fresh edit) is
+    // retried on the normal short delay.
+    const later = Date.now();
+    const actionable = pending.some((n) => readyForPush(n.id, later));
+    if (actionable) { syncSoon(); return; }
+    const soonest = Math.min(...pending.map((n) => pushFailures.get(n.id)!.until));
+    scheduleSync(Math.max(SYNC_SOON_DELAY, soonest - later));
   } catch (err) {
     console.error('sync failed', err);
     statusListener?.('error');
@@ -199,12 +253,15 @@ export async function sync(): Promise<void> {
 }
 
 let editTimer: number | null = null;
-export function syncSoon() {
+function scheduleSync(delay: number) {
   if (editTimer !== null) clearTimeout(editTimer);
   editTimer = window.setTimeout(() => {
     editTimer = null;
     void sync();
-  }, 3000);
+  }, delay);
+}
+export function syncSoon() {
+  scheduleSync(SYNC_SOON_DELAY);
 }
 
 setInterval(() => {

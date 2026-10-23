@@ -8,7 +8,7 @@ let backend: ReturnType<typeof createBackend>;
 beforeEach(() => {
   vi.resetModules();
   resetDatabase();
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
   backend = createBackend();
   mocked.client = backend.client;
 });
@@ -186,4 +186,68 @@ it('settles successful concurrent uploads before releasing the sync lock after a
   backend.hooks.beforeWrite = undefined;
   await sync();
   expect(await db.hasDirtyNotes()).toBe(false);
+});
+
+it('backs off a permanently conflicting note instead of resyncing every few seconds', async () => {
+  const original = row(note('n'));
+  backend.rows.set('n', original);
+  const db = await import('../src/db');
+  await db.putNote(note('n', 'my edit', { dirty: true, synced: baseline(original) }));
+  // Every conditional update loses: the server revision moves before the write,
+  // so `.eq('server_updated_at', ...)` never matches and the note conflicts forever.
+  backend.hooks.beforeWrite = async () => {
+    const current = backend.rows.get('n')!;
+    backend.rows.set('n', {
+      ...current,
+      server_updated_at: new Date(Date.parse(current.server_updated_at) + 1000).toISOString(),
+    });
+  };
+const { sync, onSyncStatus } = await import('../src/sync');
+  const status = vi.fn();
+  const seen: string[] = [];
+  onSyncStatus((s) => { status(s); seen.push(s); });
+  // 'syncing' is emitted before any await, so it registers synchronously when a
+  // resync is scheduled. Counting it catches a retry that has not yet finished.
+  const resyncs = () => seen.filter(s => s === 'syncing').length;
+
+  await sync();
+  const attempts = () => backend.events.filter(e => e === 'update').length;
+  // Bounded in-call retries, then a PushConflict rather than a silent success.
+  expect(attempts()).toBe(3);
+  expect(resyncs()).toBe(1);
+  expect((await db.getDirtyNotes()).map(n => n.id)).toEqual(['n']);
+  expect(status).toHaveBeenLastCalledWith('pending');
+
+  // The old bug: 'pending' rescheduled via syncSoon() every 3 seconds forever.
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(resyncs()).toBe(1);
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(resyncs()).toBe(1);
+  expect(attempts()).toBe(3);
+
+  // It does retry eventually, once the backoff window expires.
+  await vi.advanceTimersByTimeAsync(30_000);
+  await vi.waitFor(() => expect(resyncs()).toBeGreaterThan(1), { interval: 10 });
+  // The local edit is never lost or silently dropped, only deferred.
+  expect((await db.getNote('n'))?.content).toBe('my edit');
+});
+
+it('keeps retrying notes that fail for reasons other than a conflict', async () => {
+  const db = await import('../src/db');
+  await db.putNote(note('n', 'my edit', { dirty: true }));
+  backend.hooks.beforeWrite = async () => { throw new Error('network down'); };
+  const { sync, onSyncStatus } = await import('../src/sync');
+  const status = vi.fn();
+  onSyncStatus(status);
+  await sync();
+  // An infrastructure failure surfaces as 'error', not a deferred 'pending'.
+  expect(status).toHaveBeenLastCalledWith('error');
+  expect((await db.getDirtyNotes()).map(n => n.id)).toEqual(['n']);
+  // It must not be recorded as conflicting, so a later sync still attempts the
+  // upload immediately instead of waiting out a backoff window.
+  // (This note has no `synced` baseline, so it uploads as an insert.)
+  const writes = () => backend.events.filter(e => e === 'update' || e === 'insert').length;
+  const before = writes();
+  await sync();
+  expect(writes()).toBe(before + 1);
 });

@@ -7,6 +7,7 @@ import { supabase } from './supabase';
 import { sync, syncSoon, onSyncStatus, onBeforeSync, onAfterMerge } from './sync';
 import { saveEdit, type Edit } from './save';
 import { formatCreatedAt } from './dates';
+import { isBlankContent } from '../supabase/functions/_shared/moods';
 import { createMoodController } from './mood';
 import { createNoteBackground } from './noteBackground';
 import type { Session } from '@supabase/supabase-js';
@@ -23,7 +24,8 @@ const saveState = document.getElementById('save-state')!;
 const noteFooter = document.getElementById('note-footer')!;
 const noteDetails = document.getElementById('note-details') as HTMLDetailsElement;
 const noteCreated = document.getElementById('note-created') as HTMLTimeElement;
-const noteBackground = createNoteBackground(document.getElementById('editor-pane')!);
+const noteBackgroundEl = document.getElementById('editor-pane')!;
+const noteBackground = createNoteBackground(noteBackgroundEl);
 const mood = createMoodController(
   document.getElementById('note-mood')!,
   document.getElementById('note-mood-probabilities')!,
@@ -38,6 +40,9 @@ let currentId: string | null = null;
 let editorContent = '';
 let writeQueue = Promise.resolve();
 const pendingEdits = new Map<string, Edit>();
+// Notes with a write task already appended to `writeQueue`. Together with
+// `pendingEdits` this bounds queued work to one task and one snapshot per note.
+const scheduled = new Set<string>();
 let navigationVersion = 0;
 let refreshVersion = 0;
 
@@ -118,6 +123,18 @@ function showCreationDate(note: Note) {
   noteFooter.hidden = false;
 }
 
+// The decorative background keeps animating even when no note is open, so pause
+// it when the tab is hidden or the editor is not on screen. Cheap either way:
+// these layers are GPU-composited and never block the main thread.
+let hidden = false;
+function pauseBackground() {
+  noteBackgroundEl.classList.toggle('lava-paused', hidden || !document.body.classList.contains('note-open'));
+}
+function setEditorOpen(open: boolean) {
+  document.body.classList.toggle('note-open', open);
+  pauseBackground();
+}
+
 function clearCurrent() {
   noteDetails.open = false;
   mood.clear();
@@ -133,26 +150,58 @@ function clearCurrent() {
   noteCreated.textContent = '';
   noteCreated.removeAttribute('datetime');
   list.setActive(null);
-  document.body.classList.remove('note-open');
+  setEditorOpen(false);
 }
 
+// At most one queued write per note, ever. Keystrokes that arrive while a write
+// is in flight update this entry instead of appending another task, so sustained
+// typing cannot grow the queue or retain a snapshot per character.
+//
+// `previousContent` is deliberately the FIRST unflushed edit's baseline, not the
+// previous keystroke's. saveEdit() compares the stored note against it to decide
+// whether another device changed this note underneath us; comparing against the
+// last keystroke would treat our own unsaved work as an external edit and write a
+// spurious conflict copy.
 function queueEdit(edit: Edit) {
-  pendingEdits.set(edit.id, edit);
-  writeQueue = writeQueue.then(async () => {
-    try {
-      const changed = await saveEdit(edit);
-      const saved = changed.find((note) => note.id === edit.id);
-      if (pendingEdits.get(edit.id) === edit) pendingEdits.delete(edit.id);
-      syncSoon();
-      if (currentId === edit.id && !pendingEdits.has(edit.id)) {
-        saveState.textContent = saved?.deleted ? 'Empty note discarded' : 'Saved';
+  const queued = pendingEdits.get(edit.id);
+  pendingEdits.set(edit.id, queued
+    ? { ...edit, previousContent: queued.previousContent }
+    : edit);
+  // An existing task re-reads `pendingEdits` after each write, so it will pick
+  // this up. Appending here instead would grow the chain once per keystroke.
+  if (scheduled.has(edit.id)) return;
+  scheduled.add(edit.id);
+  writeQueue = writeQueue.then(() => flushEdits(edit.id));
+}
+
+async function flushEdits(id: string) {
+  try {
+    for (;;) {
+      const edit = pendingEdits.get(id);
+      if (!edit) return;
+      // Clear before the await: an edit arriving mid-write lands in a fresh
+      // entry that the next iteration below picks up.
+      pendingEdits.delete(id);
+      try {
+        const changed = await saveEdit(edit);
+        const saved = changed.find((note) => note.id === id);
+        syncSoon();
+        if (currentId === id && !pendingEdits.has(id)) {
+          saveState.textContent = saved?.deleted ? 'Empty note discarded' : 'Saved';
+        }
+        applyNotes(changed);
+      } catch (err) {
+        console.error('save failed', err);
+        // Keep the entry so saveNow() retries it and blocks navigation until it
+        // lands. Only restore it if nothing newer arrived while we were writing.
+        if (!pendingEdits.has(id)) pendingEdits.set(id, edit);
+        if (currentId === id) saveState.textContent = 'Save failed — keep this note open or copy its text';
+        return;
       }
-      applyNotes(changed);
-    } catch (err) {
-      console.error('save failed', err);
-      if (currentId === edit.id) saveState.textContent = 'Save failed — keep this note open or copy its text';
     }
-  });
+  } finally {
+    scheduled.delete(id);
+  }
 }
 
 function saveChangedDocument() {
@@ -174,13 +223,13 @@ async function saveNow(discardEmpty = false): Promise<boolean> {
     await queue;
   } while (queue !== writeQueue);
   // Retry failed writes once. Keep their text and block navigation on failure.
-  for (const edit of pendingEdits.values()) queueEdit(edit);
+  for (const edit of [...pendingEdits.values()]) queueEdit(edit);
   do {
     queue = writeQueue;
     await queue;
   } while (queue !== writeQueue);
   // A newly created blank note remains editable until you leave it.
-  if (discardEmpty && currentId && pendingEdits.size === 0 && editor.getContent().trim() === '') {
+  if (discardEmpty && currentId && pendingEdits.size === 0 && isBlankContent(editor.getContent())) {
     queueEdit({ id: currentId, content: editor.getContent(), previousContent: editorContent });
     do {
       queue = writeQueue;
@@ -204,7 +253,7 @@ function showNote(note: Note) {
   mood.openNote(note.id, note.content);
   localStorage.setItem(LAST_NOTE_KEY, note.id);
   list.setActive(note.id);
-  document.body.classList.add('note-open');
+  setEditorOpen(true);
   // One mobile history entry for the editor, not one for every note opened.
   if (window.matchMedia('(max-width: 799px)').matches) {
     if ((history.state as { note?: string } | null)?.note) {
@@ -418,28 +467,47 @@ exportBtn.addEventListener('click', () => run(async () => {
 backBtn.addEventListener('click', () => run(async () => {
   const version = ++navigationVersion;
   if (!(await saveNow(true)) || version !== navigationVersion) return;
-  document.body.classList.remove('note-open');
+  setEditorOpen(false);
   if ((history.state as { note?: string } | null)?.note) history.back();
 }));
 
-// Android hardware/back: return to the note list instead of exiting.
+// A/B switches for the background, so presentation delay can be attributed
+// without editing source. `?nolava` freezes all three pools (baseline); `?lavacalm`
+// freezes two of them, isolating animated-layer count from raster cost.
+const flags = new URLSearchParams(location.search);
+if (flags.has('nolava')) document.documentElement.classList.add('no-lava');
+if (flags.has('lavacalm')) document.documentElement.classList.add('lava-calm');
+
+// Android hardware/back: return to the note list instead of exiting. Wait for
+// the save first, so a failing write cannot leave its text behind a hidden
+// editor; the failure path restores the editor's history entry.
 window.addEventListener('popstate', () => {
   if (deleteDialog.open) deleteDialog.close('cancel');
   navigationVersion++;
-  document.body.classList.remove('note-open');
-  void saveNow(true);
+  void saveNow(true).then((saved) => {
+    if (saved) { setEditorOpen(false); return; }
+    setEditorOpen(true);
+    if (currentId && window.matchMedia('(max-width: 799px)').matches) {
+      history.pushState({ note: currentId }, '');
+    }
+  });
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') void saveNow(true);
+  hidden = document.visibilityState === 'hidden';
+  if (hidden) void saveNow(true);
   else {
     const current = notes.find((note) => note.id === currentId);
     if (current) showCreationDate(current);
   }
+  // Never animate the background while nothing can see it.
+  pauseBackground();
 });
 window.addEventListener('pagehide', () => void saveNow(true));
 window.addEventListener('beforeunload', (event) => {
-  if (pendingEdits.size > 0) {
+  // `scheduled` covers a write already removed from `pendingEdits` but still
+  // running, which would otherwise close without any warning.
+  if (pendingEdits.size > 0 || scheduled.size > 0) {
     event.preventDefault();
     event.returnValue = '';
   }
@@ -471,9 +539,10 @@ run(async function boot() {
     await openNote(last);
     // Narrow screens start on the list; keep it that way after restore.
     if (window.matchMedia('(max-width: 799px)').matches) {
-      document.body.classList.remove('note-open');
+      setEditorOpen(false);
       history.replaceState(null, '');
     }
   }
+  pauseBackground();
   newBtn.disabled = false;
 });

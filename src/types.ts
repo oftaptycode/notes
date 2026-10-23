@@ -34,14 +34,26 @@ export function newId(): string {
   });
 }
 
+// Matches the whitespace `trim()` removes, applied one character at a time so
+// long notes are scanned without allocating a trimmed copy.
+const TITLE_TRIM = /^\s$/;
+
+// A title needs the first nonempty line, and only 80 characters of it. Scan to
+// the newline by index and copy at most a bounded window: a single-line note can
+// be hundreds of KB, and slicing the whole line just to discard it is wasteful.
+const TITLE_WINDOW = 1024;
+
 export function titleFromContent(content: string): string {
   let from = 0;
   while (from < content.length) {
     const newline = content.indexOf('\n', from);
     const to = newline < 0 ? content.length : newline;
-    const line = content.slice(from, to).trim();
+    // Step over the line's leading whitespace without copying it.
+    let start = from;
+    while (start < to && TITLE_TRIM.test(content[start]!)) start++;
     from = to + 1;
-    if (line.length === 0) continue;
+    if (start === to) continue;
+    const line = content.slice(start, Math.min(to, start + TITLE_WINDOW));
     const stripped = line.replace(/^#{1,6}\s+/, '').replace(/^[-*+]\s+/, '').replace(/^[-*]\s*\[.\]\s+/, '');
     return stripped.length > 80 ? stripped.slice(0, 80) + '…' : stripped;
   }
