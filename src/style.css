@@ -449,8 +449,9 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
-#editor.redacted .cm-scroller {
-  font-family: 'Redacted Script', cursive;
+#editor.redacted .cm-scroller,
+#editor.redacted .cm-scroller * {
+  font-family: 'Redacted Script', cursive !important;
 }
 .cm-content {
   max-width: 44rem;
