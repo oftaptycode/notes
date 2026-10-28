@@ -20,6 +20,7 @@ const newBtn = document.getElementById('new-note') as HTMLButtonElement;
 const backBtn = document.getElementById('back') as HTMLButtonElement;
 const deleteBtn = document.getElementById('delete-note') as HTMLButtonElement;
 const exportBtn = document.getElementById('export-note') as HTMLButtonElement;
+const exportAllBtn = document.getElementById('export-all') as HTMLButtonElement;
 const saveState = document.getElementById('save-state')!;
 const noteFooter = document.getElementById('note-footer')!;
 const noteDetails = document.getElementById('note-details') as HTMLDetailsElement;
@@ -33,6 +34,10 @@ const mood = createMoodController(
 );
 const deleteDialog = document.getElementById('delete-dialog') as HTMLDialogElement;
 const deleteDialogNote = document.getElementById('delete-dialog-note')!;
+const dateDialog = document.getElementById('date-dialog') as HTMLDialogElement;
+const dateInput = document.getElementById('date-input') as HTMLInputElement;
+const dateSaveBtn = document.getElementById('date-save') as HTMLButtonElement;
+const dateCancelBtn = document.getElementById('date-cancel') as HTMLButtonElement;
 
 let notes: Note[] = [];
 const notesById = new Map<string, Note>();
@@ -121,6 +126,18 @@ function showCreationDate(note: Note) {
   const date = new Date(note.createdAt);
   noteCreated.dateTime = Number.isFinite(date.getTime()) ? date.toISOString() : '';
   noteFooter.hidden = false;
+}
+
+function toLocalInput(ts: number): string {
+  const date = new Date(ts);
+  if (!Number.isFinite(date.getTime())) return '';
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function fromLocalInput(value: string): number {
+  if (!value) return NaN;
+  return new Date(value).getTime();
 }
 
 // The decorative background keeps animating even when no note is open, so pause
@@ -335,6 +352,67 @@ async function deleteCurrent() {
   applyNotes(changed);
 }
 
+noteCreated.tabIndex = 0;
+noteCreated.setAttribute('role', 'button');
+noteCreated.style.cursor = 'pointer';
+noteCreated.addEventListener('click', () => {
+  if (!currentId) return;
+  const note = notesById.get(currentId);
+  if (!note) return;
+  dateInput.value = toLocalInput(note.createdAt);
+  dateDialog.showModal();
+});
+noteCreated.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  noteCreated.click();
+});
+
+dateCancelBtn.addEventListener('click', () => dateDialog.close());
+dateSaveBtn.addEventListener('click', () => {
+  if (!currentId) {
+    dateDialog.close();
+    return;
+  }
+  const ts = fromLocalInput(dateInput.value);
+  if (!Number.isFinite(ts)) {
+    dateDialog.close();
+    return;
+  }
+  const id = currentId;
+  run(async () => {
+    const changed = await updateNotes(id, (note) =>
+      note
+        ? [{ ...note, createdAt: ts, dirty: true, updatedAt: Math.max(Date.now(), note.updatedAt + 1) }]
+        : [],
+    );
+    syncSoon();
+    applyNotes(changed);
+    const updated = notesById.get(id);
+    if (updated) showCreationDate(updated);
+  });
+  dateDialog.close();
+});
+
+async function exportAllNotes() {
+  const all = (await getAllNotes()).slice().sort((a, b) => b.createdAt - a.createdAt);
+  const parts = all.map((note) => {
+    const iso = Number.isFinite(note.createdAt) ? new Date(note.createdAt).toISOString() : '';
+    return `NOTE ID: ${note.id}\nCREATED AT: ${iso}\nBEGINNOTE\n${note.content}\nENDNOTE`;
+  });
+  const text = parts.join('\n');
+  const blob = new Blob([text], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'notes-export.md';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  saveState.textContent = `Exported ${all.length} notes`;
+}
+
 editor.onDocChange(saveChangedDocument);
 
 function run(action: () => Promise<unknown>) {
@@ -448,6 +526,8 @@ if (supabase) {
 searchInput.addEventListener('input', () => list.setQuery(searchInput.value));
 newBtn.addEventListener('click', () => run(createNote));
 deleteBtn.addEventListener('click', () => run(deleteCurrent));
+exportAllBtn.addEventListener('click', () => run(exportAllNotes));
+
 exportBtn.addEventListener('click', () => run(async () => {
   const text = editor.getContent();
   try {

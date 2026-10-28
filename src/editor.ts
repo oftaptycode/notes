@@ -33,7 +33,7 @@ export function createEditor(parent: HTMLElement): EditorHandle {
         EditorView.lineWrapping,
         EditorView.theme({
           '&': { backgroundColor: 'transparent', color: 'var(--fg)', height: '100%' },
-          '.cm-scroller': { fontFamily: 'inherit' },
+          '.cm-scroller': { fontFamily: 'var(--serif)' },
           '.cm-content': { caretColor: 'var(--accent)' },
         }),
         EditorView.contentAttributes.of({

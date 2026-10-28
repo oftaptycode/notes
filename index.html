@@ -13,7 +13,8 @@
   <div id="app">
     <aside id="list-pane">
       <header id="list-header">
-        <input id="search" type="search" placeholder="Search notes" autocomplete="off" />
+        <input id="search" type="search" placeholder="Search" autocomplete="off" />
+        <button id="export-all" aria-label="Export all notes" title="Export all notes">Export all</button>
         <button id="new-note" aria-label="New note" title="New note">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
@@ -83,6 +84,16 @@
       <div class="dialog-actions">
         <button type="submit" value="cancel" autofocus>Cancel</button>
         <button type="submit" value="delete" class="danger-button">Delete note</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="date-dialog" aria-labelledby="date-dialog-title">
+    <form method="dialog">
+      <h2 id="date-dialog-title">Edit creation date</h2>
+      <input id="date-input" type="datetime-local" />
+      <div class="dialog-actions">
+        <button type="button" id="date-cancel">Cancel</button>
+        <button type="button" id="date-save">Save</button>
       </div>
     </form>
   </dialog>
