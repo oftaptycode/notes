@@ -398,7 +398,7 @@ async function exportAllNotes() {
   const all = (await getAllNotes()).slice().sort((a, b) => b.createdAt - a.createdAt);
   const parts = all.map((note) => {
     const iso = Number.isFinite(note.createdAt) ? new Date(note.createdAt).toISOString() : '';
-    return `NOTE ID: ${note.id}\nCREATED AT: ${iso}\nBEGINNOTE\n${note.content}\nENDNOTE`;
+    return `NOTE ID: ${note.id}\nCREATED AT: ${iso}\nBEGINNOTE:${note.id}\n${note.content}\nENDNOTE:${note.id}`;
   });
   const text = parts.join('\n');
   const blob = new Blob([text], { type: 'text/markdown' });
