@@ -20,6 +20,7 @@ const newBtn = document.getElementById('new-note') as HTMLButtonElement;
 const backBtn = document.getElementById('back') as HTMLButtonElement;
 const deleteBtn = document.getElementById('delete-note') as HTMLButtonElement;
 const exportBtn = document.getElementById('export-note') as HTMLButtonElement;
+const fontToggleBtn = document.getElementById('toggle-font') as HTMLButtonElement;
 const exportAllBtn = document.getElementById('export-all') as HTMLButtonElement;
 const saveState = document.getElementById('save-state')!;
 const noteFooter = document.getElementById('note-footer')!;
@@ -527,6 +528,18 @@ searchInput.addEventListener('input', () => list.setQuery(searchInput.value));
 newBtn.addEventListener('click', () => run(createNote));
 deleteBtn.addEventListener('click', () => run(deleteCurrent));
 exportAllBtn.addEventListener('click', () => run(exportAllNotes));
+
+const FONT_KEY = 'notes-font-redacted';
+const editorEl = document.getElementById('editor')!;
+if (localStorage.getItem(FONT_KEY) === '1') {
+  editorEl.classList.add('redacted');
+  fontToggleBtn.textContent = 'Normal';
+}
+fontToggleBtn.addEventListener('click', () => {
+  const redacted = editorEl.classList.toggle('redacted');
+  fontToggleBtn.textContent = redacted ? 'Normal' : 'Redact';
+  localStorage.setItem(FONT_KEY, redacted ? '1' : '0');
+});
 
 exportBtn.addEventListener('click', () => run(async () => {
   const text = editor.getContent();

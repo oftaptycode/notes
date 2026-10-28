@@ -445,6 +445,10 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 .cm-scroller {
   font-family: var(--serif);
   line-height: 1.7;
+}
+#editor.redacted .cm-scroller {
+  font-family: 'Redacted Script', cursive;
+}
   padding: 16px 8px;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
