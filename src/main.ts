@@ -229,7 +229,7 @@ function saveChangedDocument() {
   const edit = { id: currentId, content, previousContent: editorContent };
   editorContent = content;
   mood.updateContent(currentId, content);
-  saveState.textContent = 'Saving…';
+  saveState.textContent = '...';
   // Persist each edit now, including deletion when its content becomes empty.
   queueEdit(edit);
 }
