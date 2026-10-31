@@ -62,7 +62,7 @@ button {
 }
 button:hover { background: var(--row-hover); border-color: var(--marker); }
 button:active { opacity: 0.7; }
-button:focus-visible, input:focus-visible, .note-card:focus-visible {
+button:focus-visible, input:focus-visible, .note-card:focus-visible, .note-list-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -96,6 +96,18 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
   appearance: none;
 }
 #search::placeholder { color: var(--muted); }
+
+#export-all {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: var(--muted);
+}
+#export-all:hover { color: var(--fg); }
+#export-all svg { display: block; width: 20px; height: 20px; }
 
 #new-note {
   display: grid;
@@ -200,12 +212,15 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
   gap: 4px;
 }
 .note-list-item:hover { background: var(--row-hover); }
-.note-list-item.active { background: var(--row-active); }
+.note-list-item.active { background: var(--row-active); box-shadow: inset 3px 0 0 rgba(240, 208, 70, 0.85); }
 .note-list-title {
   font-family: var(--serif);
   font-size: 16px;
   line-height: 1.3;
   color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .note-list-date {
   font-family: var(--sans);
@@ -260,10 +275,22 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 }
 #editor-header button { border-color: transparent; color: var(--muted); }
 #editor-header button:hover { color: var(--fg); border-color: var(--border); }
-#editor-header #delete-note, .dialog-actions .danger-button {
+.dialog-actions .danger-button {
   background: var(--danger);
   border-color: var(--danger);
   color: #26100e;
+}
+/* The header Delete button is quiet text; the filled red button appears only in the confirmation dialog. */
+#editor-header #delete-note {
+  margin-left: 12px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--danger);
+}
+#editor-header #delete-note:hover:not(:disabled) {
+  background: rgba(240, 132, 123, 0.12);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 /* Three independently drifting, soft pools form the lava-like gradient.
@@ -350,8 +377,13 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 /* Pause while the tab is hidden or no note is open; nothing is being looked at. */
 .lava-paused .lava-blob { animation-play-state: paused; }
 #editor-header, #editor, #note-footer { position: relative; z-index: 1; }
-#editor-header #delete-note:hover, .dialog-actions .danger-button:hover { filter: brightness(1.08); }
+.dialog-actions .danger-button:hover { filter: brightness(1.08); }
 #editor-header #delete-note:disabled { opacity: 0.45; cursor: default; }
+/* Redact is a toggle: show when it is on. */
+#editor-pane:has(#editor.redacted) #toggle-font {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 #back { color: var(--accent); }
 
 #save-state { flex: 1; text-align: center; font-size: 12px; color: var(--muted); }
@@ -425,6 +457,9 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 #note-mood-probabilities { min-width: 0; padding: 0 0 6px; font-size: 11px; line-height: 1.6; }
 #note-mood-probabilities .mood-probability { white-space: nowrap; }
 #note-mood-probabilities:not([data-state="fresh"]) { opacity: 0.65; }
+#note-words { display: inline-flex; align-items: center; gap: 6px; }
+#note-words::before { content: ''; width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
+#note-words[hidden] { display: none; }
 #note-mood { display: inline-flex; align-items: center; gap: 6px; }
 #note-mood::before { content: ''; width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
 #note-mood[data-state="fresh"] { color: var(--fg); }
@@ -453,8 +488,9 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 #editor.redacted * {
   font-family: 'Redacted Script', cursive !important;
 }
+/* ~75-80 characters per line; 32px accounts for the horizontal padding below. */
 .cm-content {
-  max-width: 44rem;
+  max-width: calc(66ch + 32px);
   width: 100%;
   margin: 0 auto;
   padding: 4px 16px 40dvh 16px;
@@ -513,10 +549,6 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible {
 }
 
 #back { display: none; }
-
-@media (min-width: 800px) {
-  .cm-content { max-width: none; }
-}
 
 @media (max-width: 799px) {
   #editor-pane { --lava-shade-top: 0.78; --lava-shade-bottom: 0.86; --muted: #a5adb0; }

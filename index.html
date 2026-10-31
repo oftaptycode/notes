@@ -15,7 +15,11 @@
     <aside id="list-pane">
       <header id="list-header">
         <input id="search" type="search" placeholder="Search" autocomplete="off" />
-        <button id="export-all" aria-label="Export all notes" title="Export all notes">Export all</button>
+        <button id="export-all" aria-label="Export all notes" title="Export all notes">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 4v11M7 11l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
         <button id="new-note" aria-label="New note" title="New note">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
@@ -62,6 +66,7 @@
           <summary id="note-summary" title="Show or hide mood probabilities">
             <span class="note-summary-text">
               <time id="note-created"></time>
+              <span id="note-words" hidden></span>
               <span id="note-mood" role="status" aria-live="polite" aria-atomic="true" hidden></span>
             </span>
             <svg class="note-summary-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
