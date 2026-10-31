@@ -39,6 +39,7 @@ export function createEditor(parent: HTMLElement, toggleRedaction?: () => void):
         markdown({ extensions: [GFM, Guillemets] }),
         markdownFormatting,
         EditorView.lineWrapping,
+        EditorView.scrollMargins.of(() => ({ top: 76, bottom: 72 })),
         EditorView.theme({
           '&': { backgroundColor: 'transparent', color: 'var(--fg)', height: '100%' },
           '.cm-scroller': { fontFamily: 'var(--serif)' },
