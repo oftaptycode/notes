@@ -4,6 +4,7 @@ import { note, resetDatabase } from './helpers';
 
 const mocked = vi.hoisted(() => {
   const state = { content: '', change: null as (() => void) | null,
+    toggleRedaction: null as (() => void) | null,
     merge: null as ((ids: string[]) => Promise<void>) | null };
   const editor = {
     view: { focus: vi.fn(), dispatch: vi.fn() },
@@ -15,7 +16,10 @@ const mocked = vi.hoisted(() => {
   const list = { setItems: vi.fn(), upsertItems: vi.fn(), setActive: vi.fn(), setQuery: vi.fn() };
   return { state, editor, list };
 });
-vi.mock('../src/editor', () => ({ createEditor: () => mocked.editor }));
+vi.mock('../src/editor', () => ({ createEditor: (_parent: HTMLElement, toggleRedaction: () => void) => {
+  mocked.state.toggleRedaction = toggleRedaction;
+  return mocked.editor;
+} }));
 vi.mock('../src/list', () => ({ createList: () => mocked.list }));
 vi.mock('../src/supabase', () => ({ supabase: null }));
 vi.mock('../src/mood', () => ({ createMoodController: () => ({
@@ -37,9 +41,20 @@ it('persists edits and conflict backups without collection scans or editor reset
   const scans = vi.spyOn(db, 'getAllNotes');
   const targeted = vi.spyOn(db, 'getNotes');
   localStorage.setItem('notes-last-note', 'n');
+  localStorage.removeItem('notes-font-redacted');
   try {
     await import('../src/main');
     await vi.waitFor(() => expect((document.getElementById('new-note') as HTMLButtonElement).disabled).toBe(false));
+    const editorEl = document.getElementById('editor')!;
+    const toggleBtn = document.getElementById('toggle-font')!;
+    mocked.state.toggleRedaction!();
+    expect(editorEl.classList.contains('redacted')).toBe(true);
+    expect(toggleBtn.textContent).toBe('Normal');
+    expect(localStorage.getItem('notes-font-redacted')).toBe('1');
+    toggleBtn.click();
+    expect(editorEl.classList.contains('redacted')).toBe(false);
+    expect(toggleBtn.textContent).toBe('Redact');
+    expect(localStorage.getItem('notes-font-redacted')).toBe('0');
     mocked.editor.setContent.mockClear();
     for (const text of ['first', 'second', 'latest']) {
       mocked.state.content = text;

@@ -52,7 +52,7 @@ const scheduled = new Set<string>();
 let navigationVersion = 0;
 let refreshVersion = 0;
 
-const editor = createEditor(document.getElementById('editor')!);
+const editor = createEditor(document.getElementById('editor')!, toggleRedaction);
 editor.setEditable(false);
 deleteBtn.disabled = true;
 exportBtn.disabled = true;
@@ -535,11 +535,12 @@ if (localStorage.getItem(FONT_KEY) === '1') {
   editorEl.classList.add('redacted');
   fontToggleBtn.textContent = 'Normal';
 }
-fontToggleBtn.addEventListener('click', () => {
+function toggleRedaction() {
   const redacted = editorEl.classList.toggle('redacted');
   fontToggleBtn.textContent = redacted ? 'Normal' : 'Redact';
   localStorage.setItem(FONT_KEY, redacted ? '1' : '0');
-});
+}
+fontToggleBtn.addEventListener('click', toggleRedaction);
 
 exportBtn.addEventListener('click', () => run(async () => {
   const text = editor.getContent();

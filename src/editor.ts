@@ -14,7 +14,7 @@ export interface EditorHandle {
   onDocChange(cb: () => void): void;
 }
 
-export function createEditor(parent: HTMLElement): EditorHandle {
+export function createEditor(parent: HTMLElement, toggleRedaction?: () => void): EditorHandle {
   let docChangeHandler: (() => void) | null = null;
   let suppress = false;
   let editable = true;
@@ -27,7 +27,15 @@ export function createEditor(parent: HTMLElement): EditorHandle {
       extensions: [
         editability.of(editingExtensions()),
         history(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
+        keymap.of([
+          { key: 'Mod-Shift-x', run: () => {
+            if (!toggleRedaction) return false;
+            toggleRedaction();
+            return true;
+          } },
+          ...defaultKeymap,
+          ...historyKeymap,
+        ]),
         markdown({ extensions: [GFM, Guillemets] }),
         markdownFormatting,
         EditorView.lineWrapping,

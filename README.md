@@ -61,6 +61,9 @@ It uses a fake IndexedDB and a mock server, never a live Supabase project.
 
 ## Markdown display
 
+Press Ctrl+Shift+X (Cmd+Shift+X on Mac) in the editor to toggle the redacted
+font without moving the cursor. This changes only the display, not the note.
+
 Formatting never rewrites the stored Markdown. Literal brackets like `[sic]`
 remain visible; inline links and resolved reference links hide their syntax,
 destinations and titles. Nested bold/italic text keeps its formatting. The
