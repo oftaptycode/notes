@@ -548,6 +548,59 @@ button:focus-visible, input:focus-visible, .note-card:focus-visible, .note-list-
   text-underline-offset: 3px;
 }
 
+/* ---- Liquid glass header and footer ----
+   Both bars float over the editor instead of sitting beside it, so text scrolls
+   underneath them and backdrop-filter has content to blur. .cm-scroller gets top
+   padding equal to the header's footprint so the first line starts clear of it. */
+#editor-pane { --bar-clearance: calc(76px + env(safe-area-inset-top, 0px)); }
+.cm-editor .cm-scroller { padding-top: var(--bar-clearance); }
+
+#editor-header,
+#note-footer {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  z-index: 2;
+  border: 0;
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.03) 45%, rgba(255, 255, 255, 0.07)),
+    rgba(20, 26, 30, 0.42);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  backdrop-filter: blur(18px) saturate(170%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),   /* bright top edge */
+    inset 0 0 0 1px rgba(255, 255, 255, 0.10), /* thin rim */
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25),        /* darker bottom edge */
+    0 10px 28px rgba(0, 0, 0, 0.30);           /* drop shadow */
+}
+#editor-header { top: calc(8px + env(safe-area-inset-top, 0px)); padding: 6px 10px; }
+#note-footer { bottom: calc(8px + env(safe-area-inset-bottom, 0px)); padding: 0 20px 4px; border-radius: 20px; }
+
+/* Diagonal sheen. z-index -1 keeps it above the bar's background and below its buttons. */
+#editor-header::before,
+#note-footer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(120% 160% at 10% -20%, rgba(255, 255, 255, 0.18), transparent 55%);
+}
+
+/* Opaque fallback where blur is unavailable or the user asks for less transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  #editor-header, #note-footer { background: var(--surface); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  #editor-header, #note-footer {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 #back { display: none; }
 
 @media (max-width: 799px) {
